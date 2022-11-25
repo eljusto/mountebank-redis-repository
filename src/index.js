@@ -5,7 +5,7 @@ const fs = require('fs');
 const ImposterStorage = require('./ImposterStorage');
 const stubsRepository = require('./stubRepository');
 
-function create (config, logger) {
+function create(config, logger) {
     let appProtocols;
 
     const imposterFns = {};
@@ -13,8 +13,7 @@ function create (config, logger) {
     if (config.impostersRepositoryConfig) {
         try {
             repoConfig = JSON.parse(fs.readFileSync(config.impostersRepositoryConfig));
-        }
-        catch (e) {
+        } catch (e) {
             logger.error(`Can't read impostersRepositoryConfig from ${ config.impostersRepositoryConfig }.`, e);
         }
     }
@@ -29,7 +28,7 @@ function create (config, logger) {
      * @memberOf module:models/redisBackedImpostersRepository#
      * @param {Object} imposter - the imposter
      */
-    function addReference (imposter) {
+    function addReference(imposter) {
         if (config.debug) {
             logger.info('addReference');
         }
@@ -42,7 +41,7 @@ function create (config, logger) {
         });
     }
 
-    function rehydrate (imposter) {
+    function rehydrate(imposter) {
         if (config.debug) {
             logger.info('rehydrate');
         }
@@ -58,7 +57,7 @@ function create (config, logger) {
      * @param {Object} imposter - the imposter to add
      * @returns {Object} - the promise
      */
-    async function add (imposter) {
+    async function add(imposter) {
         try {
             const imposterConfig = imposter.creationRequest;
             const stubs = imposterConfig.stubs || [];
@@ -75,8 +74,7 @@ function create (config, logger) {
             addReference(imposter);
 
             return imposter;
-        }
-        catch (e) {
+        } catch (e) {
             logger.error('ADD_STUB_ERROR', e);
             return null;
         }
@@ -88,7 +86,7 @@ function create (config, logger) {
      * @param {Number} id - the id of the imposter (e.g. the port)
      * @returns {Object} - the promise resolving to the imposter
      */
-    async function get (id) {
+    async function get(id) {
         try {
             const imposter = await imposterStorage.getImposter(id);
             if (!imposter) {
@@ -98,8 +96,7 @@ function create (config, logger) {
             rehydrate(imposter);
 
             return imposter;
-        }
-        catch (e) {
+        } catch (e) {
             logger.error('GET_STUB_ERROR', e);
             return Promise.reject(e);
         }
@@ -110,14 +107,13 @@ function create (config, logger) {
      * @memberOf module:models/redisBackedImpostersRepository#
      * @returns {Object} - all imposters keyed by port
      */
-    async function all () {
+    async function all() {
         if (imposterStorage.dbClient.isClosed()) {
             return [];
         }
         try {
             return Promise.all(Object.keys(imposterFns).map(get));
-        }
-        catch (e) {
+        } catch (e) {
             logger.error('GET_ALL_ERROR', e);
         }
     }
@@ -128,11 +124,11 @@ function create (config, logger) {
      * @param {Number} id - the id (e.g. the port)
      * @returns {boolean}
      */
-    async function exists (id) {
+    async function exists(id) {
         return Object.keys(imposterFns).indexOf(String(id)) >= 0;
     }
 
-    async function shutdown (id) {
+    async function shutdown(id) {
         if (typeof imposterFns[String(id)] === 'undefined') {
             return;
         }
@@ -143,8 +139,7 @@ function create (config, logger) {
             if (stop) {
                 await stop();
             }
-        }
-        catch (e) {
+        } catch (e) {
             logger.error('SHUTDOWN_ERROR', e);
         }
     }
@@ -155,10 +150,10 @@ function create (config, logger) {
      * @param {Number} id - the id (e.g. the port)
      * @returns {Object} - the deletion promise
      */
-    async function del (id) {
+    async function del(id) {
         try {
             const imposter = await get(id);
-            const cleanup = [shutdown(id)];
+            const cleanup = [ shutdown(id) ];
 
             if (imposter !== null) {
                 cleanup.push(imposterStorage.deleteImposter(id));
@@ -166,8 +161,7 @@ function create (config, logger) {
 
             await Promise.all(cleanup);
             return imposter;
-        }
-        catch (e) {
+        } catch (e) {
             logger.error('DELETE_STUB_ERROR', e);
             return Promise.reject(e);
         }
@@ -177,7 +171,7 @@ function create (config, logger) {
      * Deletes all imposters; used during testing
      * @memberOf module:models/redisBackedImpostersRepository#
      */
-    async function stopAll () {
+    async function stopAll() {
 
         try {
             await Promise.all(Object.keys(imposterFns).map(shutdown));
@@ -191,14 +185,13 @@ function create (config, logger) {
      * Deletes all imposters synchronously; used during shutdown
      * @memberOf module:models/redisBackedImpostersRepository#
      */
-    async function stopAllSync () {
+    async function stopAllSync() {
         try {
             await Promise.all(Object.keys(imposterFns).map(shutdown));
 
             // FIXME need to make it synchronic
             return await imposterStorage.stop();
-        }
-        catch (e) {
+        } catch (e) {
             logger.error('STOP_ALL_SYNC_ERROR', e);
         }
     }
@@ -208,39 +201,35 @@ function create (config, logger) {
      * @memberOf module:models/redisBackedImpostersRepository#
      * @returns {Object} - the deletion promise
      */
-    async function deleteAll () {
+    async function deleteAll() {
         const ids = Object.keys(imposterFns);
-
         try {
-            await Promise.all(Object.keys(imposterFns).map(shutdown));
+            await Promise.all(ids.map(shutdown));
             await imposterStorage.deleteAllImposters();
-        }
-        catch (e) {
-            logger.error('DELETE_ALL_ERROR', e);
+        } catch (e) {
+            logger.error('DELETE_ALL_ERROR', e, ids);
         }
     }
 
-    async function loadImposter (imposterConfig, protocols) {
+    async function loadImposter(imposterConfig, protocols) {
         const protocol = protocols[imposterConfig.protocol];
 
         if (protocol) {
             if (config.debug) {
-                logger.info(`Loading ${imposterConfig.protocol}:${imposterConfig.port} from db`);
+                logger.info(`Loading ${ imposterConfig.protocol }:${ imposterConfig.port } from db`);
             }
             try {
                 const imposter = await protocol.createImposterFrom(imposterConfig);
                 addReference(imposter);
+            } catch (e) {
+                logger.error(`Cannot load imposter ${ imposterConfig.port }; ${ e }`);
             }
-            catch (e) {
-                logger.error(`Cannot load imposter ${imposterConfig.port}; ${ e }`);
-            }
-        }
-        else {
-            logger.error(`Cannot load imposter ${imposterConfig.port}; no protocol loaded for ${config.protocol}`);
+        } else {
+            logger.error(`Cannot load imposter ${ imposterConfig.port }; no protocol loaded for ${ config.protocol }`);
         }
     }
 
-    function onImposterChange (imposterId) {
+    function onImposterChange(imposterId) {
         const imposter = imposterFns[imposterId];
 
         if (imposter) {
@@ -265,7 +254,7 @@ function create (config, logger) {
         }
     }
 
-    function onImposterDelete (imposterId) {
+    function onImposterDelete(imposterId) {
         const imposter = imposterFns[imposterId];
 
         if (imposter) {
@@ -277,10 +266,10 @@ function create (config, logger) {
         }
     }
 
-    function onAllImpostersDelete () {
+    function onAllImpostersDelete() {
         const ids = Object.keys(imposterFns);
         Promise.all(Object.keys(imposterFns).map(shutdown)).then(() => {
-            if (options.debug) {
+            if (config.debug) {
                 logger.info('All imposters have stopped. ids: ', ids);
             }
         });
@@ -292,7 +281,7 @@ function create (config, logger) {
      * @param {Object} protocols - The protocol map, used to instantiate a new instance
      * @returns {Object} - a promise
      */
-    async function loadAll (protocols) {
+    async function loadAll(protocols) {
         appProtocols = protocols;
 
         try {
@@ -304,13 +293,12 @@ function create (config, logger) {
             await imposterStorage.subscribe(ImposterStorage.CHANNELS.imposter_change, onImposterChange);
             await imposterStorage.subscribe(ImposterStorage.CHANNELS.imposter_delete, onImposterDelete);
             await imposterStorage.subscribe(ImposterStorage.CHANNELS.all_imposters_delete, onAllImpostersDelete);
-        }
-        catch (e) {
+        } catch (e) {
             logger.error('LOAD_ALL_ERROR', e);
         }
     }
 
-    function stubsFor (id) {
+    function stubsFor(id) {
         return stubsRepository(id, imposterStorage, logger);
     }
 
@@ -324,7 +312,7 @@ function create (config, logger) {
         loadAll,
         stopAll,
         stopAllSync,
-        stubsFor
+        stubsFor,
     };
 }
 

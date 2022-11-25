@@ -2,7 +2,7 @@
 
 const clone = require('./clone');
 
-function wrap (stub, imposterId, imposterStorage) {
+function wrap(stub, imposterId, imposterStorage) {
     const cloned = clone(stub || {});
     const stubId = stub ? stub.meta.id : '-';
 
@@ -11,16 +11,15 @@ function wrap (stub, imposterId, imposterStorage) {
             addResponse: () => Promise.resolve(),
             nextResponse: () => Promise.resolve({
                 is: {},
-                stubIndex: () => Promise.resolve(0)
+                stubIndex: () => Promise.resolve(0),
             }),
-            recordMatch: () => Promise.resolve()
+            recordMatch: () => Promise.resolve(),
         };
     }
 
     delete cloned.meta;
 
-
-    function createResponse (responseConfig) {
+    function createResponse(responseConfig) {
         const result = clone(responseConfig || { is: {} });
         result.stubIndex = getStubIndex;
 
@@ -37,11 +36,11 @@ function wrap (stub, imposterId, imposterStorage) {
         return await imposterStorage.addResponse(imposterId, stubId, response);
     };
 
-    async function getStubIndex () {
+    async function getStubIndex() {
         const imposter = await imposterStorage.getImposter(imposterId);
 
         if (!imposter.stubs) {
-            throw new Error(`Something weird. Imposter without stubs ${JSON.stringify(imposter)}`);
+            throw new Error(`Something weird. Imposter without stubs ${ JSON.stringify(imposter) }`);
         }
 
         for (let i = 0; i < imposter.stubs.length; i += 1) {
@@ -57,18 +56,17 @@ function wrap (stub, imposterId, imposterStorage) {
      * @memberOf module:models/redisImpostersRepository#
      * @returns {Object} - the promise
      */
-    cloned.nextResponse = async () => {
-        let responseId;
+    cloned.nextResponse = async() => {
         const meta = await imposterStorage.getMeta(imposterId, stubId);
 
         if (!meta) {
-            throw new Error(`WRAP_NEXT_RESPONSE_ERROR, no meta for stubId ${stubId}`);
+            throw new Error(`WRAP_NEXT_RESPONSE_ERROR, no meta for stubId ${ stubId }`);
         }
 
         const maxIndex = meta.orderWithRepeats.length;
         const responseIndex = meta.orderWithRepeats[meta.nextIndex % maxIndex];
 
-        responseId = meta.responseIds[responseIndex];
+        const responseId = meta.responseIds[responseIndex];
         meta.nextIndex = (meta.nextIndex + 1) % maxIndex;
 
         await imposterStorage.setMeta(imposterId, stubId, meta);
@@ -78,8 +76,7 @@ function wrap (stub, imposterId, imposterStorage) {
 
         if (responseConfig) {
             return createResponse(responseConfig);
-        }
-        else {
+        } else {
             return createResponse();
         }
     };
@@ -93,7 +90,7 @@ function wrap (stub, imposterId, imposterStorage) {
      * @param {Number} processingTime - the time to match the predicate and generate the full response
      * @returns {Object} - the promise
      */
-    cloned.recordMatch = async (request, response, responseConfig, processingTime) => {
+    cloned.recordMatch = async(request, response, responseConfig, processingTime) => {
         if (!Array.isArray(cloned.matches)) {
             cloned.matches = [];
         }
@@ -103,9 +100,8 @@ function wrap (stub, imposterId, imposterStorage) {
             request,
             response,
             responseConfig,
-            processingTime
+            processingTime,
         };
-
 
         cloned.matches.push(match);
 

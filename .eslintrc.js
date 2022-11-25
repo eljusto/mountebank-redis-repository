@@ -94,6 +94,7 @@ module.exports = {
         '@typescript-eslint/no-empty-function': [ 'off' ],
         '@typescript-eslint/no-unused-vars': [ 'error', { ignoreRestSiblings: true } ],
         '@typescript-eslint/no-useless-constructor': [ 'error' ],
+        '@typescript-eslint/no-var-requires': [ 'off' ],
         '@typescript-eslint/type-annotation-spacing': 'error',
 
         // turned off in favor of  @typescript-eslint
@@ -181,7 +182,6 @@ module.exports = {
         } ],
         'wrap-iife': [ 'error', 'inside' ],
         yoda: [ 'error', 'never', { exceptRange: true } ],
-
 
         'regexp/confusing-quantifier': 'error',
         'regexp/control-character-escape': 'error',
