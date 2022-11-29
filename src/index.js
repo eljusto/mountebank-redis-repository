@@ -5,17 +5,40 @@ const fs = require('fs');
 const ImposterStorage = require('./ImposterStorage');
 const stubsRepository = require('./stubRepository');
 
+const DEFAULT_REPO_CONFIG = {
+    redisOptions: {
+        socket: {
+            host: 'localhost',
+            port: 6379,
+        },
+    },
+};
+
+function getRedisRepoConfig (config) {
+    if (!config.impostersRepositoryConfig) {
+        return DEFAULT_REPO_CONFIG;
+    }
+
+    if (typeof config.impostersRepositoryConfig === 'object') {
+        return config.impostersRepositoryConfig;
+    }
+    try {
+        return JSON.parse(fs.readFileSync(config.impostersRepositoryConfig));
+    } catch (e) {
+        throw new Error(`Can't read impostersRepositoryConfig from ${ config.impostersRepositoryConfig }.`, e);
+    }
+}
+
 function create(config, logger) {
     let appProtocols;
 
     const imposterFns = {};
-    let repoConfig = {};
-    if (config.impostersRepositoryConfig) {
-        try {
-            repoConfig = JSON.parse(fs.readFileSync(config.impostersRepositoryConfig));
-        } catch (e) {
-            logger.error(`Can't read impostersRepositoryConfig from ${ config.impostersRepositoryConfig }.`, e);
-        }
+    let repoConfig;
+    try {
+        repoConfig = getRedisRepoConfig(config);
+    } catch (e) {
+        logger.error(e);
+        return;
     }
 
     const imposterStorage = new ImposterStorage(repoConfig.redisOptions, logger);
