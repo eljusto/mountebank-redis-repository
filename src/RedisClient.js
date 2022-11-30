@@ -1,9 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
-const { createClient } = require('redis');
-
-const OPTIONS = {};
+const Redis = require('ioredis');
 
 function wrapCallbackFn(clientId, callbackFn) {
     return message => {
@@ -21,18 +19,29 @@ function wrapCallbackFn(clientId, callbackFn) {
 
 class RedisClient {
     constructor(options = {}, logger) {
-        this.client = createClient({ ...OPTIONS, ...options });
-        this.clientId = crypto.randomBytes(16).toString('base64');
-        this.logger = logger;
+        this._client = new Redis(options);
+        this._subscriber = new Redis(options);
+        this._clientId = crypto.randomBytes(16).toString('base64');
+        this._logger = logger;
 
-        this.client.on('error', err => this.logger.error('REDIS_CLIENT_ERROR', err));
+        this._client.on('error', err => this.logger.error('REDIS_CLIENT_ERROR', err));
+        this._subscriber.on('error', err => this.logger.error('REDIS_CLIENT_ERROR', err));
+
+        this._pubSubCallbacks = {};
+        this._subscriber.on("message", (channel, message) => {
+            console.log(`Received ${message} from ${channel}`);
+            if (typeof this._pubSubCallbacks[channel] === 'function') {
+                this._pubSubCallbacks[channel](message);
+            }
+        });
+
     }
 
     async setObject(type, id, obj) {
         try {
             const client = await this.getClient();
             const json = JSON.stringify(obj);
-            return await client.hSet(type, String(id), json);
+            return await client.hset(type, String(id), json);
         } catch (e) {
             this.logger.error('REDIS_SET_OBJECT_ERROR', e);
             return null;
@@ -43,12 +52,12 @@ class RedisClient {
         try {
             const client = await this.getClient();
 
-            const itemsString = await client.hGet(type, String(id)) || '[]';
+            const itemsString = await client.hget(type, String(id)) || '[]';
             const items = JSON.parse(itemsString);
             items.push(obj);
             const json = JSON.stringify(items);
 
-            return await client.hSet(type, String(id), json);
+            return await client.hset(type, String(id), json);
         } catch (e) {
             this.logger.error('REDIS_PUSH_TO_OBJECT_ERROR', e);
             return null;
@@ -58,7 +67,7 @@ class RedisClient {
     async getObject(type, id) {
         try {
             const client = await this.getClient();
-            const json = await client.hGet(type, String(id));
+            const json = await client.hget(type, String(id));
             return JSON.parse(json);
         } catch (e) {
             this.logger.error('REDIS_GET_OBJECT_ERROR', e, type, id);
@@ -69,7 +78,7 @@ class RedisClient {
     async getAllObjects(type) {
         try {
             const client = await this.getClient();
-            const list = await client.hVals(type);
+            const list = await client.hvals(type);
             return list.map(item => JSON.parse(item));
         } catch (e) {
             this.logger.error('REDIS_GET_ALL_OBJECTS_ERROR', e);
@@ -80,7 +89,7 @@ class RedisClient {
     async delObject(type, id) {
         try {
             const client = await this.getClient();
-            return await client.hDel(type, String(id));
+            return await client.hdel(type, String(id));
         } catch (e) {
             this.logger.error('REDIS_DEL_OBJECT_ERROR', e);
             return 0;
@@ -123,7 +132,7 @@ class RedisClient {
     async resetCounter(type, id) {
         try {
             const client = await this.getClient();
-            const res = await client.hSet(type, String(id), 0);
+            const res = await client.hset(type, String(id), 0);
             return res;
         } catch (e) {
             this.logger.error('REDIS_RESET_COUNTER_ERROR', e);
@@ -135,7 +144,7 @@ class RedisClient {
         try {
             const client = await this.getClient();
             const data = {
-                _clientId: this.clientId,
+                _clientId: this._clientId,
                 payload,
             };
             const res = await client.publish(channel, JSON.stringify(data));
@@ -149,7 +158,9 @@ class RedisClient {
     async subscribe(channel, callbackFn) {
         try {
             const client = await this.getPubSubClient();
-            return client.subscribe(channel, wrapCallbackFn(this.clientId, callbackFn));
+            await client.subscribe(channel);
+
+            this._pubSubCallbacks[channel] = wrapCallbackFn(this._clientId, callbackFn);
         } catch (e) {
             this.logger.error('REDIS_SUBSCRIBE_ERROR', e);
             return null;
@@ -160,6 +171,7 @@ class RedisClient {
         try {
             const client = await this.getPubSubClient();
             const res = await client.unsubscribe(channel);
+            delete this._pubSubCallbacks[channel];
             return res;
         } catch (e) {
             this.logger.error('REDIS_UNSUBSCRIBE_ERROR', e);
@@ -174,40 +186,36 @@ class RedisClient {
 
     async connectToServer() {
         try {
-            return await this.client.connect();
+            this._isStopped = false;
+            return await this._client.connect();
         } catch (e) {
             this.logger.error('REDIS_CONNECT_ERROR', e);
         }
     }
 
     async getClient() {
-        if (!this.client.isOpen) {
+        if (this.isClosed()) {
             await this.connectToServer();
         }
-        return this.client;
+        return this._client;
     }
 
     async getPubSubClient() {
-        if (!this.pubSubClient) {
-            const client = await this.getClient();
-            this.pubSubClient = client.duplicate();
-            await this.pubSubClient.connect();
+        if (this.isClosed()) {
+            await this.connectToServer();
         }
-        return this.pubSubClient;
+        return this._subscriber;
     }
 
     isClosed() {
-        return !this.client.isOpen;
+        return this._isStopped;
     }
 
     async stop() {
         try {
-            if (this.client.isOpen) {
-                await this.client.disconnect();
-            }
-            if (this.pubSubClient?.isOpen) {
-                await this.pubSubClient.disconnect();
-            }
+            await this._client.disconnect();
+            await this._subscriber.disconnect();
+            this._isStopped = true;
         } catch (e) {
             this.logger.error('REDIS_STOP_ERROR', e);
         }

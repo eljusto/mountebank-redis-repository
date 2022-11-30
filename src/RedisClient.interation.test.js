@@ -5,7 +5,7 @@ const RedisClient = require('./RedisClient');
 const noop = () => {};
 
 const logger = {
-    error: noop,
+    error: console.log,
 };
 
 let rs;
@@ -33,10 +33,7 @@ beforeAll(async () => {
         console.log(`child process exited with code ${code}`);
     });
     client = new RedisClient({
-        socket: {
             port: '3333',
-        },
-
     }, logger);
 });
 
@@ -157,7 +154,7 @@ it('subscribe, get message and unsubscribe', (done) => {
         }
     }
     client.subscribe('channel_1', handleMessagePublished).then(() => {
-        client.clientId  = 'ANOTHER_CLIENT_ID';
+        client._clientId  = 'ANOTHER_CLIENT_ID';
         client.publish('channel_1', 'message in the bottle');
     });
 });
