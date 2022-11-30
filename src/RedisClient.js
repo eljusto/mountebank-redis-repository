@@ -25,7 +25,7 @@ class RedisClient {
         this.clientId = crypto.randomBytes(16).toString('base64');
         this.logger = logger;
 
-        this.client.on('error', err => this.logger.log('REDIS_CLIENT_ERROR', err));
+        this.client.on('error', err => this.logger.error('REDIS_CLIENT_ERROR', err));
     }
 
     async setObject(type, id, obj) {
@@ -172,15 +172,11 @@ class RedisClient {
         return await client.flushDb();
     }
 
-    async connectToServer(callback = () => {}) {
+    async connectToServer() {
         try {
-            await this.client.connect();
-            this.logger.info('Successfully connected to Redis db');
-
-            return callback();
+            return await this.client.connect();
         } catch (e) {
             this.logger.error('REDIS_CONNECT_ERROR', e);
-            return callback(e);
         }
     }
 
@@ -196,9 +192,8 @@ class RedisClient {
             const client = await this.getClient();
             this.pubSubClient = client.duplicate();
             await this.pubSubClient.connect();
-            return this.pubSubClient;
         }
-        return Promise.resolve(this.pubSubClient);
+        return this.pubSubClient;
     }
 
     isClosed() {
@@ -214,7 +209,7 @@ class RedisClient {
                 await this.pubSubClient.disconnect();
             }
         } catch (e) {
-            this.logger.log('REDIS_STOP_ERROR', e);
+            this.logger.error('REDIS_STOP_ERROR', e);
         }
     }
 }
