@@ -2,9 +2,8 @@ const child_process = require('child_process');
 
 const RedisClient = require('./RedisClient');
 
-const noop = () => {};
-
 const logger = {
+    info: console.log,
     error: console.log,
 };
 
@@ -124,6 +123,32 @@ it('read a list of non-existing objects', async () => {
     return;
 });
 
+it('increment counter', async () => {
+    await client.incrementCounter('my_counter', 123);
+    const res = await client.getObject('my_counter', 123);
+
+    expect(res).toStrictEqual(1);
+    return;
+});
+
+it('decrement counter', async () => {
+    await client.incrementCounter('my_counter', 124);
+    const res = await client.getObject('my_counter', 124);
+
+    expect(res).toStrictEqual(1);
+    return;
+});
+
+it('reset counter', async () => {
+    await client.incrementCounter('my_counter', 123);
+    await client.incrementCounter('my_counter', 123);
+    await client.resetCounter('my_counter', 123);
+    const res = await client.getObject('my_counter', 123);
+    expect(res).toStrictEqual(0);
+
+    return;
+});
+
 it('del all objects', async () => {
     const obj1 = {
         some: 'payload1',
@@ -145,7 +170,6 @@ it('del all objects', async () => {
 it('subscribe, get message and unsubscribe', (done) => {
     const handleMessagePublished = (message) => {
         try {
-
             expect(message).toBe('message in the bottle');
 
             client.unsubscribe('channel_1').then(() => done());
@@ -153,10 +177,27 @@ it('subscribe, get message and unsubscribe', (done) => {
             client.unsubscribe('channel_1').then(() => done(error));
         }
     }
+
     client.subscribe('channel_1', handleMessagePublished).then(() => {
         client._clientId  = 'ANOTHER_CLIENT_ID';
         client.publish('channel_1', 'message in the bottle');
     });
+});
+
+it('subscribe, unsubscribe and check that no message received then', (done) =>  {
+    const handleMessagePublished = () => {
+        done('should not be called');
+    }
+
+    client.subscribe('channel_2', handleMessagePublished).then(() => {
+        client._clientId  = 'ANOTHER_CLIENT_ID';
+        client.publish('channel_2', 'message in the bottle').then(() => {
+            // 2 seconds would be enough to wait for callback
+            setTimeout(() => done(), 2000);
+        });
+    });
+
+   client.unsubscribe('channel_2');
 });
 
 it('stop client', async () => {

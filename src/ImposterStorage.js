@@ -1,6 +1,7 @@
 'use strict';
 
 const RedisClient = require('./RedisClient');
+const errors = require('mountebank/src/util/errors');
 
 const CHANNELS = {
     imposter_change: 'imposter_change',
@@ -21,7 +22,9 @@ class ImposterStorage {
     }
 
     async start() {
-        return await this.dbClient.connectToServer();
+        if (this.dbClient.isClosed()) {
+            return await this.dbClient.connectToServer();
+        }
     }
 
     async stop() {
@@ -50,6 +53,14 @@ class ImposterStorage {
             return await this.dbClient.subscribe(channel, callbackFn);
         } catch (e) {
             this.logger.error('CLIENT_ERROR subscribe', e);
+        }
+    }
+
+    async unsubscribe(channel) {
+        try {
+            return await this.dbClient.unsubscribe(channel);
+        } catch (e) {
+            this.logger.error('CLIENT_ERROR unsubscribe', e);
         }
     }
 
@@ -322,7 +333,7 @@ class ImposterStorage {
             imposter.stubs = [];
         }
         if (typeof imposter.stubs[index] === 'undefined') {
-            throw new Error(`no stub at index ${ index } for imposter ${ imposterId }`);
+            throw errors.MissingResourceError(`no stub at index ${index}`);
         }
 
         imposter.stubs.splice(index, 1);
