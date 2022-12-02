@@ -23,12 +23,12 @@ class RedisClient {
 
         this._client.on('error', err => this._logger.error('REDIS_CLIENT_ERROR', err));
         this._client.on('connect', () => {
-            this._logger.info('Connected to redis.')
+            this._logger.info('Connected to redis.');
             this.connected = true;
-        })
+        });
         this._client.on('reconnecting', (ms) => {
-            this._logger.info(`Reconnecting to redis in ${ms}.`)
-        })
+            this._logger.info(`Reconnecting to redis in ${ ms }.`);
+        });
     }
 
     async setObject(type, id, obj) {
@@ -212,6 +212,7 @@ class RedisClient {
     async getClient() {
         if (this.isClosed()) {
             throw new Error('NEED TO MANUALLY RECONNECT');
+
             /* await this.connectToServer(); */
         }
         return this._client;

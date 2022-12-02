@@ -10,7 +10,7 @@ const logger = {
 let rs;
 let client;
 
-beforeAll(async () => {
+beforeAll(async() => {
     rs = child_process.spawn(
         'redis-server',
         [
@@ -21,18 +21,18 @@ beforeAll(async () => {
             '--appendfilename ""',
             '--appendfsync no',
         ],
-        { cwd: process.cwd(), env: process.env, stdio: [ 'inherit', 'pipe', 'inherit' ] }
+        { cwd: process.cwd(), env: process.env, stdio: [ 'inherit', 'pipe', 'inherit' ] },
     );
 
     rs.stdout.on('data', (data) => {
-        console.log(`stdout: ${data}`);
+        console.log(`stdout: ${ data }`);
     });
 
     rs.on('close', (code) => {
-        console.log(`child process exited with code ${code}`);
+        console.log(`child process exited with code ${ code }`);
     });
     client = new RedisClient({
-            port: '3333',
+        port: '3333',
     }, logger);
 });
 
@@ -46,7 +46,7 @@ afterAll(() => {
     });
 });
 
-it('write and read object', async () => {
+it('write and read object', async() => {
     const obj = {
         some: 'payload',
     };
@@ -58,7 +58,7 @@ it('write and read object', async () => {
     return;
 });
 
-it('push to object', async () => {
+it('push to object', async() => {
     const obj1 = {
         some: 'payload1',
     };
@@ -70,11 +70,11 @@ it('push to object', async () => {
 
     const res = await client.getObject('some_lists', 123);
 
-    expect(res).toStrictEqual([obj1, obj2]);
+    expect(res).toStrictEqual([ obj1, obj2 ]);
     return;
 });
 
-it('get all objects', async () => {
+it('get all objects', async() => {
     const obj1 = {
         some: 'payload1',
     };
@@ -87,11 +87,11 @@ it('get all objects', async () => {
 
     const res = await client.getAllObjects('some_entities');
 
-    expect(res).toStrictEqual([obj1, obj2]);
+    expect(res).toStrictEqual([ obj1, obj2 ]);
     return;
 });
 
-it('delete object', async () => {
+it('delete object', async() => {
     const obj1 = {
         some: 'payload1',
     };
@@ -105,25 +105,25 @@ it('delete object', async () => {
 
     const res = await client.getAllObjects('entities');
 
-    expect(res).toStrictEqual([obj2]);
+    expect(res).toStrictEqual([ obj2 ]);
     return;
 });
 
-it('read non-existing object', async () => {
+it('read non-existing object', async() => {
     const res = await client.getObject('foobar', 123);
 
     expect(res).toBe(null);
     return;
 });
 
-it('read a list of non-existing objects', async () => {
+it('read a list of non-existing objects', async() => {
     const res = await client.getAllObjects('kapibar');
 
     expect(res).toStrictEqual([]);
     return;
 });
 
-it('increment counter', async () => {
+it('increment counter', async() => {
     await client.incrementCounter('my_counter', 123);
     const res = await client.getObject('my_counter', 123);
 
@@ -131,7 +131,7 @@ it('increment counter', async () => {
     return;
 });
 
-it('decrement counter', async () => {
+it('decrement counter', async() => {
     await client.incrementCounter('my_counter', 124);
     const res = await client.getObject('my_counter', 124);
 
@@ -139,7 +139,7 @@ it('decrement counter', async () => {
     return;
 });
 
-it('reset counter', async () => {
+it('reset counter', async() => {
     await client.incrementCounter('my_counter', 123);
     await client.incrementCounter('my_counter', 123);
     await client.resetCounter('my_counter', 123);
@@ -149,7 +149,7 @@ it('reset counter', async () => {
     return;
 });
 
-it('del all objects', async () => {
+it('del all objects', async() => {
     const obj1 = {
         some: 'payload1',
     };
@@ -176,31 +176,31 @@ it('subscribe, get message and unsubscribe', (done) => {
         } catch (error) {
             client.unsubscribe('channel_1').then(() => done(error));
         }
-    }
+    };
 
     client.subscribe('channel_1', handleMessagePublished).then(() => {
-        client._clientId  = 'ANOTHER_CLIENT_ID';
+        client._clientId = 'ANOTHER_CLIENT_ID';
         client.publish('channel_1', 'message in the bottle');
     });
 });
 
-it('subscribe, unsubscribe and check that no message received then', (done) =>  {
+it('subscribe, unsubscribe and check that no message received then', (done) => {
     const handleMessagePublished = () => {
         done('should not be called');
-    }
+    };
 
     client.subscribe('channel_2', handleMessagePublished).then(() => {
-        client._clientId  = 'ANOTHER_CLIENT_ID';
+        client._clientId = 'ANOTHER_CLIENT_ID';
         client.publish('channel_2', 'message in the bottle').then(() => {
             // 2 seconds would be enough to wait for callback
             setTimeout(() => done(), 2000);
         });
     });
 
-   client.unsubscribe('channel_2');
+    client.unsubscribe('channel_2');
 });
 
-it('stop client', async () => {
+it('stop client', async() => {
     await client.stop();
 
     expect(client.isClosed()).toBe(true);

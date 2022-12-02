@@ -333,7 +333,7 @@ class ImposterStorage {
             imposter.stubs = [];
         }
         if (typeof imposter.stubs[index] === 'undefined') {
-            throw errors.MissingResourceError(`no stub at index ${index}`);
+            throw errors.MissingResourceError(`no stub at index ${ index }`);
         }
 
         imposter.stubs.splice(index, 1);

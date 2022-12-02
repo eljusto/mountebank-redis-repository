@@ -14,7 +14,7 @@ const DEFAULT_REPO_CONFIG = {
     },
 };
 
-function getRedisRepoConfig (config) {
+function getRedisRepoConfig(config) {
     if (!config.impostersRepositoryConfig) {
         return DEFAULT_REPO_CONFIG;
     }
@@ -107,6 +107,7 @@ function create(config, logger) {
                 return null;
             }
             imposter.stubs = await stubsFor(id).toJSON();
+
             /* rehydrate(imposter); */
 
             return imposter;
