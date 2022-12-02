@@ -87,12 +87,8 @@ function stubRepository(imposterId, imposterStorage, logger) {
      * @returns {Object} - the promise
      */
     async function overwriteAtIndex(stub, index) {
-        try {
-            await deleteAtIndex(index);
-            await insertAtIndex(stub, index);
-        } catch (e) {
-            logger.error('STUB_OVERWRITE_AT_INDEX_ERROR', e);
-        }
+        await deleteAtIndex(index);
+        await insertAtIndex(stub, index);
     }
 
     async function loadResponses(stub) {

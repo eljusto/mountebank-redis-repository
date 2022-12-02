@@ -52,27 +52,18 @@ function create(config, logger) {
      * @param {Object} imposter - the imposter
      */
     function addReference(imposter) {
-        if (config.debug) {
-            logger.info('addReference');
-        }
-        const id = String(imposter.port);
-        imposterFns[id] = {};
-        Object.keys(imposter).forEach(key => {
-            if (typeof imposter[key] === 'function') {
-                imposterFns[id][key] = imposter[key];
-            }
-        });
+        imposterFns[String(imposter.port)] = {};
     }
 
-    function rehydrate(imposter) {
-        if (config.debug) {
-            logger.info('rehydrate');
-        }
-        const id = String(imposter.port);
-        Object.keys(imposterFns[id]).forEach(key => {
-            imposter[key] = imposterFns[id][key];
-        });
-    }
+    /* function rehydrate(imposter) { */
+    /*     if (config.debug) { */
+    /*         logger.info('rehydrate'); */
+    /*     } */
+    /*     const id = String(imposter.port); */
+    /*     Object.keys(imposterFns[id]).forEach(key => { */
+    /*         imposter[key] = imposterFns[id][key]; */
+    /*     }); */
+    /* } */
 
     /**
      * Adds a new imposter
@@ -116,7 +107,7 @@ function create(config, logger) {
                 return null;
             }
             imposter.stubs = await stubsFor(id).toJSON();
-            rehydrate(imposter);
+            /* rehydrate(imposter); */
 
             return imposter;
         } catch (e) {
@@ -198,6 +189,11 @@ function create(config, logger) {
 
         try {
             await Promise.all(Object.keys(imposterFns).map(shutdown));
+            await Promise.all([
+                await imposterStorage.unsubscribe(ImposterStorage.CHANNELS.imposter_change),
+                await imposterStorage.unsubscribe(ImposterStorage.CHANNELS.imposter_delete),
+                await imposterStorage.unsubscribe(ImposterStorage.CHANNELS.all_imposters_delete),
+            ]);
             return await imposterStorage.stop();
         } catch (e) {
             logger.error('STOP_ALL_ERROR', e);
@@ -209,14 +205,8 @@ function create(config, logger) {
      * @memberOf module:models/redisBackedImpostersRepository#
      */
     async function stopAllSync() {
-        try {
-            await Promise.all(Object.keys(imposterFns).map(shutdown));
-
-            // FIXME need to make it synchronic
-            return await imposterStorage.stop();
-        } catch (e) {
-            logger.error('STOP_ALL_SYNC_ERROR', e);
-        }
+        // FIXME: make it sync
+        return stopAll();
     }
 
     /**
@@ -311,11 +301,14 @@ function create(config, logger) {
             await imposterStorage.start();
             logger.info('Connection done. Going to load all imposters');
             const allImposters = await imposterStorage.getAllImposters();
+
             const promises = allImposters.map(async imposter => loadImposter(imposter, protocols));
             await Promise.all(promises);
-            await imposterStorage.subscribe(ImposterStorage.CHANNELS.imposter_change, onImposterChange);
-            await imposterStorage.subscribe(ImposterStorage.CHANNELS.imposter_delete, onImposterDelete);
-            await imposterStorage.subscribe(ImposterStorage.CHANNELS.all_imposters_delete, onAllImpostersDelete);
+            await Promise.all([
+                await imposterStorage.subscribe(ImposterStorage.CHANNELS.imposter_change, onImposterChange),
+                await imposterStorage.subscribe(ImposterStorage.CHANNELS.imposter_delete, onImposterDelete),
+                await imposterStorage.subscribe(ImposterStorage.CHANNELS.all_imposters_delete, onAllImpostersDelete),
+            ]);
         } catch (e) {
             logger.error('LOAD_ALL_ERROR', e);
         }

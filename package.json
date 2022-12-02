@@ -5,7 +5,7 @@
   "main": "src/index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "redis-test": "jest src/RedisClient.interation.test.js"
+    "redis-test": "echo 'Be sure redis-server is installed' && jest src/RedisClient.interation.test.js"
   },
   "keywords": [
     "redis",
