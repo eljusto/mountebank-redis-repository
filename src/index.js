@@ -52,18 +52,21 @@ function create(config, logger) {
      * @param {Object} imposter - the imposter
      */
     function addReference(imposter) {
-        imposterFns[String(imposter.port)] = {};
+        const id = String(imposter.port);
+        imposterFns[id] = {};
+        Object.keys(imposter).forEach(key => {
+            if (typeof imposter[key] === 'function') {
+                imposterFns[id][key] = imposter[key];
+            }
+        });
     }
 
-    /* function rehydrate(imposter) { */
-    /*     if (config.debug) { */
-    /*         logger.info('rehydrate'); */
-    /*     } */
-    /*     const id = String(imposter.port); */
-    /*     Object.keys(imposterFns[id]).forEach(key => { */
-    /*         imposter[key] = imposterFns[id][key]; */
-    /*     }); */
-    /* } */
+    function rehydrate(imposter) {
+        const id = String(imposter.port);
+        Object.keys(imposterFns[id]).forEach(key => {
+            imposter[key] = imposterFns[id][key];
+        });
+    }
 
     /**
      * Adds a new imposter
@@ -108,7 +111,7 @@ function create(config, logger) {
             }
             imposter.stubs = await stubsFor(id).toJSON();
 
-            /* rehydrate(imposter); */
+            rehydrate(imposter);
 
             return imposter;
         } catch (e) {
@@ -189,13 +192,14 @@ function create(config, logger) {
     async function stopAll() {
 
         try {
-            await Promise.all(Object.keys(imposterFns).map(shutdown));
+            const shutdownFns = Object.keys(imposterFns).map(shutdown);
+            await Promise.all(shutdownFns);
             await Promise.all([
                 await imposterStorage.unsubscribe(ImposterStorage.CHANNELS.imposter_change),
                 await imposterStorage.unsubscribe(ImposterStorage.CHANNELS.imposter_delete),
                 await imposterStorage.unsubscribe(ImposterStorage.CHANNELS.all_imposters_delete),
             ]);
-            return await imposterStorage.stop();
+            await imposterStorage.stop();
         } catch (e) {
             logger.error('STOP_ALL_ERROR', e);
         }
@@ -235,6 +239,7 @@ function create(config, logger) {
             try {
                 const imposter = await protocol.createImposterFrom(imposterConfig);
                 addReference(imposter);
+                return imposter;
             } catch (e) {
                 logger.error(`Cannot load imposter ${ imposterConfig.port }; ${ e }`);
             }
@@ -303,7 +308,7 @@ function create(config, logger) {
             logger.info('Connection done. Going to load all imposters');
             const allImposters = await imposterStorage.getAllImposters();
 
-            const promises = allImposters.map(async imposter => loadImposter(imposter, protocols));
+            const promises = allImposters.map(imposter => loadImposter(imposter, protocols));
             await Promise.all(promises);
             await Promise.all([
                 await imposterStorage.subscribe(ImposterStorage.CHANNELS.imposter_change, onImposterChange),

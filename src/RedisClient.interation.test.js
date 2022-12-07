@@ -10,11 +10,13 @@ const logger = {
 let rs;
 let client;
 
+const REDIS_PORT = 3333;
+
 beforeAll(async() => {
     rs = child_process.spawn(
         'redis-server',
         [
-            '--port 3333',
+            `--port ${ REDIS_PORT }`,
             '--save ""',
             '--appendonly no',
             '--dbfilename ""',
@@ -25,14 +27,14 @@ beforeAll(async() => {
     );
 
     rs.stdout.on('data', (data) => {
-        console.log(`stdout: ${ data }`);
+        logger.info(`stdout: ${ data }`);
     });
 
     rs.on('close', (code) => {
-        console.log(`child process exited with code ${ code }`);
+        logger.info(`child process exited with code ${ code }`);
     });
     client = new RedisClient({
-        port: '3333',
+        port: REDIS_PORT,
     }, logger);
 });
 
@@ -179,8 +181,7 @@ it('subscribe, get message and unsubscribe', (done) => {
     };
 
     client.subscribe('channel_1', handleMessagePublished).then(() => {
-        client._clientId = 'ANOTHER_CLIENT_ID';
-        client.publish('channel_1', 'message in the bottle');
+        client._publish('channel_1', 'message in the bottle', 'ANOTHER_CLIENT_ID');
     });
 });
 
@@ -190,8 +191,7 @@ it('subscribe, unsubscribe and check that no message received then', (done) => {
     };
 
     client.subscribe('channel_2', handleMessagePublished).then(() => {
-        client._clientId = 'ANOTHER_CLIENT_ID';
-        client.publish('channel_2', 'message in the bottle').then(() => {
+        client._publish('channel_2', 'message in the bottle', 'ANOTHER_CLIENT_ID').then(() => {
             // 2 seconds would be enough to wait for callback
             setTimeout(() => done(), 2000);
         });

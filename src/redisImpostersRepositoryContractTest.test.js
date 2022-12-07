@@ -7,16 +7,7 @@
 /* eslint max-nested-callbacks: 0 */
 
 const RedisClient = require('./RedisClient');
-const Logger = require('./testUtils/fakeLogger');
 
-/* const logger = require('@vertis/pino'); */
-/* const mbLogger = logger.child({ _context: 'mountebank' }); */
-const realLogger = require('mountebank/src/util/logger').createLogger({
-    console: {
-        colorize: true,
-        format: '%level: %message',
-    },
-});
 const { loadProtocols } = require('mountebank/src/models/protocols');
 
 const assert = require('assert');
@@ -56,9 +47,10 @@ function deimposterize(obj) {
 }
 
 const loggr = {
+    debug: console.log,
     error: console.log,
-    warn: console.log,
     info: console.log,
+    warn: console.log,
 
 };
 describe('redisImpostersRepository', function() {
@@ -74,8 +66,7 @@ describe('redisImpostersRepository', function() {
         repo = create({}, loggr);
 
         const options = { log: { level: 'info' } };
-        // FakeLogger hangs, maybe something to do with the ScopedLogger wrapping it in imposter.js
-        protocols = loadProtocols(options, '', realLogger, () => true, repo);
+        protocols = loadProtocols(options, '', { baseLogger: loggr }, () => true, repo);
     });
 
     afterEach(async function() {
@@ -106,10 +97,9 @@ describe('redisImpostersRepository', function() {
             assert.deepEqual(deimposterize(imposter), { port: 1, value: 2, stubs: [] });
         });
 
-        it('should properly save imposter with functions and omit it', async function() {
+        it('should save functions on imposter', async function() {
             const imposter = {
                 port: 1,
-                value: 2,
                 truthy: () => true,
                 falsy: () => false,
             };
@@ -117,11 +107,8 @@ describe('redisImpostersRepository', function() {
             await repo.add(imposterize(imposter));
             const saved = await repo.get('1');
 
-            assert.deepEqual(saved, {
-                port: 1,
-                value: 2,
-                stubs: [],
-            });
+            assert.ok(saved.truthy());
+            assert.ok(!saved.falsy());
         });
     });
 

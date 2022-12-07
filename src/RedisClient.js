@@ -15,7 +15,6 @@ class RedisClient {
 
         this._pubSubCallbacks = {};
         this._subscriber.on('message', (channel, message) => {
-            this._logger.error(`Received ${ message } from ${ channel }`);
             if (typeof this._pubSubCallbacks[channel] === 'function') {
                 this._pubSubCallbacks[channel](message);
             }
@@ -134,11 +133,12 @@ class RedisClient {
         }
     }
 
-    async publish(channel, payload) {
+    // Pass clientId for testing purpose only
+    async _publish(channel, payload, clientId) {
         try {
             const client = await this.getClient();
             const data = {
-                _clientId: this._clientId,
+                _clientId: clientId,
                 payload,
             };
             const res = await client.publish(channel, JSON.stringify(data));
@@ -147,6 +147,10 @@ class RedisClient {
             this._logger.error('REDIS_PUBLISH_ERROR', e, channel, payload);
             return null;
         }
+    }
+
+    async publish(channel, payload) {
+        return await this._publish(channel, payload, this._clientId);
     }
 
     async subscribe(channel, callbackFn) {
@@ -165,9 +169,6 @@ class RedisClient {
         try {
             delete this._pubSubCallbacks[channel];
             const client = await this.getPubSubClient();
-            if (this.isClosed()) {
-                return null;
-            }
             const res = await client.unsubscribe(channel);
             return res;
         } catch (e) {
@@ -180,8 +181,7 @@ class RedisClient {
         return message => {
             try {
                 const data = JSON.parse(message);
-
-                if (data._clientId !== this.clientId) {
+                if (data._clientId !== this._clientId) {
                     callbackFn(data.payload);
                 }
             } catch (e) {
@@ -211,9 +211,7 @@ class RedisClient {
 
     async getClient() {
         if (this.isClosed()) {
-            throw new Error('NEED TO MANUALLY RECONNECT');
-
-            /* await this.connectToServer(); */
+            await this.connectToServer();
         }
         return this._client;
     }
@@ -229,20 +227,17 @@ class RedisClient {
         return this._isStopped;
     }
 
-    async _closePromisified(_client) {
-        return new Promise((resolve) => {
-            _client.once('close', () => resolve('disconnected'));
-            _client.disconnect();
-        });
-    }
-
     async stop() {
         try {
+            if (this._isStopped) {
+                return;
+            }
             this._isStopped = true;
-            return Promise.all([
-                this._closePromisified(this._client),
-                this._closePromisified(this._subscriber),
-            ]);
+            await this._client.quit();
+            await this._subscriber.quit();
+
+            // wait next tick to fix bug with  connection just after disconnection
+            return new Promise(resolve => setTimeout(resolve, 0));
         } catch (e) {
             this._logger.error('REDIS_STOP_ERROR', e);
         }
