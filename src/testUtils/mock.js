@@ -35,8 +35,7 @@ function mock() {
         setMessage(expected, actualArguments);
 
         if (JSON.stringify(expected) === '[]') {
-            console.log('Expected params not captured; please do not convert function to lambda because it loses arguments variable');
-            return false;
+            throw new Error('Expected params not captured; please do not convert function to lambda because it loses arguments variable');
         }
         return wasCalled && JSON.stringify(actual) === JSON.stringify(expected);
     };
