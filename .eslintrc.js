@@ -3,11 +3,13 @@
 module.exports = {
     'extends': [
         'eslint:recommended',
+        'plugin:jest/recommended',
         'plugin:regexp/recommended',
         'plugin:@typescript-eslint/eslint-recommended',
         'plugin:@typescript-eslint/recommended',
     ],
     plugins: [
+        'jest',
         'regexp',
         '@typescript-eslint',
         'sort-destructure-keys',
@@ -182,6 +184,20 @@ module.exports = {
         } ],
         'wrap-iife': [ 'error', 'inside' ],
         yoda: [ 'error', 'never', { exceptRange: true } ],
+
+        'jest/consistent-test-it': [ 'error', {
+            fn: 'it',
+            withinDescribe: 'it',
+        } ],
+        'jest/expect-expect': [ 'error', { assertFunctionNames: [ 'expect' ] } ],
+        'jest/no-alias-methods': 'error',
+        'jest/no-disabled-tests': 'error',
+        'jest/no-focused-tests': 'error',
+        'jest/no-identical-title': 'error',
+        'jest/prefer-to-contain': 'error',
+        'jest/prefer-to-have-length': 'error',
+        'jest/no-large-snapshots': [ 'error', { maxSize: 500 } ],
+        'jest/valid-expect': 'error',
 
         'regexp/confusing-quantifier': 'error',
         'regexp/control-character-escape': 'error',

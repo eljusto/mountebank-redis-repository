@@ -1,19 +1,15 @@
-const child_process = require('child_process');
+const childProcess = require('child_process');
 
 const RedisClient = require('./RedisClient');
 
-const logger = {
-    info: console.log,
-    error: console.log,
-};
-
+const logger = require('./testUtils/logger');
 let rs;
 let client;
 
 const REDIS_PORT = 3333;
 
 beforeAll(async() => {
-    rs = child_process.spawn(
+    rs = childProcess.spawn(
         'redis-server',
         [
             `--port ${ REDIS_PORT }`,
@@ -169,35 +165,40 @@ it('del all objects', async() => {
     return;
 });
 
-it('subscribe, get message and unsubscribe', (done) => {
-    const handleMessagePublished = (message) => {
-        try {
-            expect(message).toBe('message in the bottle');
+it('subscribe, get message and unsubscribe', () => {
+    return new Promise((resolve, reject) => {
+        const handleMessagePublished = (message) => {
+            try {
+                expect(message).toBe('message in the bottle');
 
-            client.unsubscribe('channel_1').then(() => done());
-        } catch (error) {
-            client.unsubscribe('channel_1').then(() => done(error));
-        }
-    };
+                client.unsubscribe('channel_1').then(() => resolve());
+            } catch (error) {
+                client.unsubscribe('channel_1').then(() => reject(error));
+            }
+        };
 
-    client.subscribe('channel_1', handleMessagePublished).then(() => {
-        client._publish('channel_1', 'message in the bottle', 'ANOTHER_CLIENT_ID');
+        client.subscribe('channel_1', handleMessagePublished).then(() => {
+            client._publish('channel_1', 'message in the bottle', 'ANOTHER_CLIENT_ID');
+        });
     });
 });
 
-it('subscribe, unsubscribe and check that no message received then', (done) => {
-    const handleMessagePublished = () => {
-        done('should not be called');
-    };
+it('subscribe, unsubscribe and check that no message received then', () => {
+    return new Promise((resolve, reject) => {
+        const handleMessagePublished = () => {
+            expect(false).toBe(true);
+            reject('should not be called');
+        };
 
-    client.subscribe('channel_2', handleMessagePublished).then(() => {
-        client._publish('channel_2', 'message in the bottle', 'ANOTHER_CLIENT_ID').then(() => {
-            // 2 seconds would be enough to wait for callback
-            setTimeout(() => done(), 2000);
+        client.subscribe('channel_2', handleMessagePublished).then(() => {
+            client._publish('channel_2', 'message in the bottle', 'ANOTHER_CLIENT_ID').then(() => {
+                // 2 seconds would be enough to wait for callback
+                setTimeout(() => resolve(), 2000);
+            });
         });
-    });
 
-    client.unsubscribe('channel_2');
+        client.unsubscribe('channel_2');
+    });
 });
 
 it('stop client', async() => {
