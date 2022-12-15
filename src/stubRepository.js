@@ -4,6 +4,8 @@ const clone = require('./clone');
 const wrap = require('./wrap');
 
 function stubRepository(imposterId, imposterStorage, logger) {
+    const _logger = logger.child({ _context: 'stub_repository' });
+
     /**
      * Returns the number of stubs for the imposter
      * @memberOf module:models/redisBackedImpostersRepository#
@@ -26,7 +28,7 @@ function stubRepository(imposterId, imposterStorage, logger) {
         try {
             stubs = await imposterStorage.getStubs(imposterId);
         } catch (e) {
-            logger.error('STUB_FIRST_ERROR', e);
+            _logger.error(e, 'STUB_FIRST_ERROR');
             stubs = [];
         }
 
@@ -108,7 +110,7 @@ function stubRepository(imposterId, imposterStorage, logger) {
             const res = await Promise.all(responsePromises);
             return res;
         } catch (e) {
-            logger.error('STUB_LOAD_RESPONSES_ERROR', e);
+            _logger.error(e, 'STUB_LOAD_RESPONSES_ERROR');
             return [];
         }
     }
@@ -131,7 +133,7 @@ function stubRepository(imposterId, imposterStorage, logger) {
         const imposter = await imposterStorage.getImposter(imposterId);
         if (!imposter) {
             if (options.debug) {
-                logger.warn('Can\'t find imposter with id ', imposterId);
+                _logger.warn(`Can't find imposter with id ${ imposterId }`);
             }
             return [];
         }
@@ -156,7 +158,7 @@ function stubRepository(imposterId, imposterStorage, logger) {
 
             return imposter.stubs;
         } catch (e) {
-            logger.error('STUB_TO_JSON_ERROR', e);
+            _logger.error(e, 'STUB_TO_JSON_ERROR');
         }
     }
 

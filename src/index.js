@@ -37,7 +37,7 @@ function create(config, logger) {
     try {
         repoConfig = getRedisRepoConfig(config);
     } catch (e) {
-        logger.error(e);
+        logger.error(e, 'READ_CONFIG_ERROR');
         return;
     }
 
@@ -92,7 +92,7 @@ function create(config, logger) {
 
             return imposter;
         } catch (e) {
-            logger.error('ADD_STUB_ERROR', e);
+            logger.error(e, 'ADD_STUB_ERROR');
             return null;
         }
     }
@@ -115,7 +115,7 @@ function create(config, logger) {
 
             return imposter;
         } catch (e) {
-            logger.error('GET_STUB_ERROR', e);
+            logger.error(e, 'GET_STUB_ERROR');
             return Promise.reject(e);
         }
     }
@@ -132,7 +132,7 @@ function create(config, logger) {
         try {
             return Promise.all(Object.keys(imposterFns).map(get));
         } catch (e) {
-            logger.error('GET_ALL_ERROR', e);
+            logger.error(e, 'GET_ALL_ERROR');
         }
     }
 
@@ -158,7 +158,7 @@ function create(config, logger) {
                 await stop();
             }
         } catch (e) {
-            logger.error('SHUTDOWN_ERROR', e);
+            logger.error(e, 'SHUTDOWN_ERROR');
         }
     }
 
@@ -180,7 +180,7 @@ function create(config, logger) {
             await Promise.all(cleanup);
             return imposter;
         } catch (e) {
-            logger.error('DELETE_STUB_ERROR', e);
+            logger.error(e, 'DELETE_STUB_ERROR');
             return Promise.reject(e);
         }
     }
@@ -201,7 +201,7 @@ function create(config, logger) {
             ]);
             await imposterStorage.stop();
         } catch (e) {
-            logger.error('STOP_ALL_ERROR', e);
+            logger.error(e, 'STOP_ALL_ERROR');
         }
     }
 
@@ -225,7 +225,7 @@ function create(config, logger) {
             await Promise.all(ids.map(shutdown));
             await imposterStorage.deleteAllImposters();
         } catch (e) {
-            logger.error('DELETE_ALL_ERROR', e, ids);
+            logger.error(e, 'DELETE_ALL_ERROR');
         }
     }
 
@@ -241,7 +241,7 @@ function create(config, logger) {
                 addReference(imposter);
                 return imposter;
             } catch (e) {
-                logger.error(`Cannot load imposter ${ imposterConfig.port }; ${ e }`);
+                logger.error(e, `Cannot load imposter ${ imposterConfig.port }`);
             }
         } else {
             logger.error(`Cannot load imposter ${ imposterConfig.port }; no protocol loaded for ${ config.protocol }`);
@@ -289,7 +289,7 @@ function create(config, logger) {
         const ids = Object.keys(imposterFns);
         Promise.all(Object.keys(imposterFns).map(shutdown)).then(() => {
             if (config.debug) {
-                logger.info('All imposters have stopped. ids: ', ids);
+                logger.info(`All imposters have stopped. ids: ${ ids }`);
             }
         });
     }
@@ -316,7 +316,7 @@ function create(config, logger) {
                 await imposterStorage.subscribe(ImposterStorage.CHANNELS.all_imposters_delete, onAllImpostersDelete),
             ]);
         } catch (e) {
-            logger.error('LOAD_ALL_ERROR', e);
+            logger.error(e, 'LOAD_ALL_ERROR');
         }
     }
 

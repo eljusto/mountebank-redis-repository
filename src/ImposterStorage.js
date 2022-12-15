@@ -17,7 +17,7 @@ function repeatsFor(response) {
 class ImposterStorage {
     constructor(options = {}, logger) {
         this.dbClient = new RedisClient(options, logger);
-        this.logger = logger;
+        this._logger = logger.child({ _context: 'imposter_storage' });
         this.idCounter = 0;
     }
 
@@ -43,7 +43,7 @@ class ImposterStorage {
             this.dbClient.publish(CHANNELS.imposter_change, imposter.port);
             return res;
         } catch (e) {
-            this.logger.error('CLIENT_ERROR addImposter', e);
+            this._logger.error(e, 'ADD_IMPOSTER_ERROR');
             return null;
         }
     }
@@ -52,7 +52,7 @@ class ImposterStorage {
         try {
             return await this.dbClient.subscribe(channel, callbackFn);
         } catch (e) {
-            this.logger.error('CLIENT_ERROR subscribe', e);
+            this._logger.error(e, 'SUBSCRIBE_ERROR');
         }
     }
 
@@ -60,7 +60,7 @@ class ImposterStorage {
         try {
             return await this.dbClient.unsubscribe(channel);
         } catch (e) {
-            this.logger.error('CLIENT_ERROR unsubscribe', e);
+            this._logger.error(e, 'UNSUBSCRIBE_ERROR');
         }
     }
 
@@ -71,7 +71,7 @@ class ImposterStorage {
             this.dbClient.publish(CHANNELS.imposter_change, imposter.port);
             return res;
         } catch (e) {
-            this.logger.error('CLIENT_ERROR updateImposter', e);
+            this._logger.error(e, 'UPDATE_IMPOSTER_ERROR');
             return null;
         }
     }
@@ -80,7 +80,7 @@ class ImposterStorage {
         try {
             return await this.dbClient.getAllObjects('imposter') || [];
         } catch (e) {
-            this.logger.error('CLIENT_ERROR getAllImposters', e);
+            this._logger.error(e, 'GET_ALL_IMPOSTERS_ERROR');
             return [];
         }
     }
@@ -90,7 +90,7 @@ class ImposterStorage {
             const res = await this.dbClient.getObject('imposter', id);
             return res;
         } catch (e) {
-            this.logger.error('CLIENT_ERROR getImposter', e);
+            this._logger.error(e, 'GET_IMPOSTER_ERROR');
             return null;
         }
     }
@@ -105,7 +105,7 @@ class ImposterStorage {
             // await this.dbClient.delAllObjects('matches');
             return res;
         } catch (e) {
-            this.logger.error('CLIENT_ERROR deleteImposter', e);
+            this._logger.error(e, 'DELETE_IMPOSTER_ERROR');
             return null;
         }
     }
@@ -127,7 +127,7 @@ class ImposterStorage {
 
             return res;
         } catch (e) {
-            this.logger.error('CLIENT_ERROR deleteAllImposters', e);
+            this._logger.error(e, 'DELETE_ALL_IMPOSTERS_ERROR');
             return null;
         }
     }
@@ -136,7 +136,7 @@ class ImposterStorage {
         try {
             return await this.dbClient.pushToObject('requests', imposterId, request);
         } catch (e) {
-            this.logger.error('CLIENT_ERROR addRequest', e);
+            this._logger.error(e, 'ADD_REQUEST_ERROR');
             return Promise.reject(e);
         }
     }
@@ -145,7 +145,7 @@ class ImposterStorage {
         try {
             return await this.dbClient.delObject('requests', imposterId);
         } catch (e) {
-            this.logger.error('CLIENT_ERROR deleteRequests', e);
+            this._logger.error(e, 'DELETE_REQUESTS_ERROR');
             return Promise.reject(e);
         }
     }
@@ -154,7 +154,7 @@ class ImposterStorage {
         try {
             return await this.dbClient.delAllObjects('requests');
         } catch (e) {
-            this.logger.error('CLIENT_ERROR deleteAllRequests', e);
+            this._logger.error(e, 'DELETE_ALL_REQUESTS_ERROR');
             return Promise.reject(e);
         }
     }
@@ -163,7 +163,7 @@ class ImposterStorage {
         try {
             return await this.dbClient.getObject('requests', imposterId) || [];
         } catch (e) {
-            this.logger.error('CLIENT_ERROR getRequests', e);
+            this._logger.error(e, 'GET_REQUESTS_ERROR');
             return Promise.reject(e);
         }
     }
@@ -172,7 +172,7 @@ class ImposterStorage {
         try {
             return await this.dbClient.getObject('responses', responseId);
         } catch (e) {
-            this.logger.error('CLIENT_ERROR getResponses', e);
+            this._logger.error(e, 'GET_RESPONSE_ERROR');
             return Promise.reject(e);
         }
     }
@@ -183,7 +183,7 @@ class ImposterStorage {
             await this.dbClient.setObject('responses', responseId, response);
             return responseId;
         } catch (e) {
-            this.logger.error('CLIENT_ERROR addRequest', e);
+            this._logger.error(e, 'SAVE_RESPONSE_ERROR');
             return Promise.reject(e);
         }
     }
@@ -192,7 +192,7 @@ class ImposterStorage {
         try {
             return await this.dbClient.delObject('responses', responseId);
         } catch (e) {
-            this.logger.error('CLIENT_ERROR deleteResponses', e);
+            this._logger.error(e, 'DELETE_RESPONSE_ERROR');
             return Promise.reject(e);
         }
     }
@@ -201,7 +201,7 @@ class ImposterStorage {
         try {
             return await this.dbClient.delAllObjects('responses');
         } catch (e) {
-            this.logger.error('CLIENT_ERROR deleteAllResponses', e);
+            this._logger.error(e, 'DELETE_ALL_RESPONSES_ERROR');
             return Promise.reject(e);
         }
     }
@@ -211,7 +211,7 @@ class ImposterStorage {
             const res = await this.dbClient.delObject('meta', [ imposterId, stubId ].join(':'));
             return res;
         } catch (e) {
-            this.logger.error('CLIENT_ERROR delMeta', e);
+            this._logger.error(e, 'DELETE_META_ERROR');
             return Promise.reject(e);
         }
     }
@@ -221,7 +221,7 @@ class ImposterStorage {
             const res = await this.dbClient.setObject('meta', [ imposterId, stubId ].join(':'), meta);
             return res;
         } catch (e) {
-            this.logger.error('CLIENT_ERROR setMeta', e);
+            this._logger.error(e, 'SET_META_ERROR');
             return Promise.reject(e);
         }
     }
@@ -231,7 +231,7 @@ class ImposterStorage {
             const res = await this.dbClient.getObject('meta', [ imposterId, stubId ].join(':'));
             return res;
         } catch (e) {
-            this.logger.error('CLIENT_ERROR getMeta', e);
+            this._logger.error(e, 'GET_META_ERROR');
             return Promise.reject(e);
         }
     }
@@ -241,7 +241,7 @@ class ImposterStorage {
         try {
             return await this.dbClient.delAllObjects('meta');
         } catch (e) {
-            this.logger.error('CLIENT_ERROR deleteAllMeta', e);
+            this._logger.error(e, 'DELETE_ALL_META_ERROR');
             return Promise.reject(e);
         }
     }
@@ -250,7 +250,7 @@ class ImposterStorage {
         try {
             return await this.dbClient.pushToObject('matches', stubId, match);
         } catch (e) {
-            this.logger.error('CLIENT_ERROR addMatch', e);
+            this._logger.error(e, 'ADD_MATCH_ERROR');
             return Promise.reject(e);
         }
     }
@@ -260,7 +260,7 @@ class ImposterStorage {
         try {
             return await this.dbClient.getObject('matches', stubId);
         } catch (e) {
-            this.logger.error('CLIENT_ERROR getMatches', e);
+            this._logger.error(e, 'GET_MATCHES_ERROR');
             return Promise.reject(e);
         }
     }
@@ -269,7 +269,7 @@ class ImposterStorage {
         try {
             return await this.dbClient.delObject('match', stubId);
         } catch (e) {
-            this.logger.error('CLIENT_ERROR deleteMatches', e);
+            this._logger.error(e, 'DELETE_MATCHES_ERROR');
             return Promise.reject(e);
         }
     }
@@ -278,7 +278,7 @@ class ImposterStorage {
         try {
             return await this.dbClient.delAllObjects('match');
         } catch (e) {
-            this.logger.error('CLIENT_ERROR deleteAllMatches', e);
+            this._logger.error(e, 'DELETE_ALL_MATCHES_ERROR');
             return Promise.reject(e);
         }
     }
@@ -287,7 +287,7 @@ class ImposterStorage {
         try {
             return await this.dbClient.getObject('requestCounter', imposterId);
         } catch (e) {
-            this.logger.error('CLIENT_ERROR getRequestCounter', e);
+            this._logger.error(e, 'GET_REQUEST_COUNTER_ERROR');
             return Promise.reject(e);
         }
     }
@@ -298,7 +298,7 @@ class ImposterStorage {
             const val = await this.dbClient.getObject('requestCounter', imposterId);
             return val;
         } catch (e) {
-            this.logger.error('CLIENT_ERROR incrementRequestCounter', e);
+            this._logger.error(e, 'INCREMENT_REQUEST_COUNTER_ERROR');
             return Promise.reject(e);
         }
     }

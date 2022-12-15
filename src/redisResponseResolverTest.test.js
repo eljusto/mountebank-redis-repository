@@ -6,8 +6,8 @@ const util = require('util');
 
 const mock = require('./testUtils/mock').mock;
 const imposterize = require('./testUtils/imposterize');
-const logger = require('./testUtils/logger');
-
+const createLogger = require('./testUtils/createLogger');
+const logger = createLogger();
 const repo = require('./index').create({}, logger);
 const createStubsRepository = repo.stubsFor;
 

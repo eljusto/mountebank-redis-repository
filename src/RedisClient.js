@@ -5,22 +5,12 @@ const Redis = require('ioredis');
 
 class RedisClient {
     constructor(options = {}, logger) {
-        this._client = new Redis(options);
-        this._subscriber = new Redis(options);
         this._clientId = crypto.randomBytes(16).toString('base64');
-        this._logger = logger;
+        this._logger = logger.child({ _context: 'redis_client' });
         this._isStopped = false;
 
-        this._subscriber.on('error', err => this._logger.error('REDIS_CLIENT_ERROR', err));
-
-        this._pubSubCallbacks = {};
-        this._subscriber.on('message', (channel, message) => {
-            if (typeof this._pubSubCallbacks[channel] === 'function') {
-                this._pubSubCallbacks[channel](message);
-            }
-        });
-
-        this._client.on('error', err => this._logger.error('REDIS_CLIENT_ERROR', err));
+        this._client = new Redis(options);
+        this._client.on('error', err => this._logger.error(err, 'CLIENT_ERROR'));
         this._client.on('connect', () => {
             this._logger.info('Connected to redis.');
             this.connected = true;
@@ -28,6 +18,16 @@ class RedisClient {
         this._client.on('reconnecting', (ms) => {
             this._logger.info(`Reconnecting to redis in ${ ms }.`);
         });
+
+        this._subscriber = new Redis(options);
+        this._pubSubCallbacks = {};
+        this._subscriber.on('error', err => this._logger.error(err, 'SUBSCRIBER_ERROR'));
+        this._subscriber.on('message', (channel, message) => {
+            if (typeof this._pubSubCallbacks[channel] === 'function') {
+                this._pubSubCallbacks[channel](message);
+            }
+        });
+
     }
 
     async setObject(type, id, obj) {
@@ -36,7 +36,7 @@ class RedisClient {
             const json = JSON.stringify(obj);
             return await client.hset(type, String(id), json);
         } catch (e) {
-            this._logger.error('REDIS_SET_OBJECT_ERROR', e);
+            this._logger.error(e, 'SET_OBJECT_ERROR');
             return null;
         }
     }
@@ -52,7 +52,7 @@ class RedisClient {
 
             return await client.hset(type, String(id), json);
         } catch (e) {
-            this._logger.error('REDIS_PUSH_TO_OBJECT_ERROR', e);
+            this._logger.error(e, 'PUSH_TO_OBJECT_ERROR');
             return null;
         }
     }
@@ -63,7 +63,7 @@ class RedisClient {
             const json = await client.hget(type, String(id));
             return JSON.parse(json);
         } catch (e) {
-            this._logger.error('REDIS_GET_OBJECT_ERROR', e, type, id);
+            this._logger.error(e, 'GET_OBJECT_ERROR');
             return null;
         }
     }
@@ -74,7 +74,7 @@ class RedisClient {
             const list = await client.hvals(type);
             return list.map(item => JSON.parse(item));
         } catch (e) {
-            this._logger.error('REDIS_GET_ALL_OBJECTS_ERROR', e);
+            this._logger.error(e, 'GET_ALL_OBJECTS_ERROR');
             return null;
         }
     }
@@ -84,7 +84,7 @@ class RedisClient {
             const client = await this.getClient();
             return await client.hdel(type, String(id));
         } catch (e) {
-            this._logger.error('REDIS_DEL_OBJECT_ERROR', e);
+            this._logger.error(e, 'DEL_OBJECT_ERROR');
             return 0;
         }
     }
@@ -95,7 +95,7 @@ class RedisClient {
             const res = await client.del(type);
             return res;
         } catch (e) {
-            this._logger.error('REDIS_DEL_ALL_OBJECTS_ERROR', e);
+            this._logger.error(e, 'DEL_ALL_OBJECTS_ERROR');
             return null;
         }
     }
@@ -106,7 +106,7 @@ class RedisClient {
             const res = await client.hincrby(type, String(id), 1);
             return res;
         } catch (e) {
-            this._logger.error('REDIS_INCREMENT_COUNTER_ERROR', e);
+            this._logger.error(e, 'INCREMENT_COUNTER_ERROR');
             return null;
         }
     }
@@ -117,7 +117,7 @@ class RedisClient {
             const res = await client.hincrby(type, String(id), -1);
             return res;
         } catch (e) {
-            this._logger.error('REDIS_DECREMENT_COUNTER_ERROR', e);
+            this._logger.error(e, 'DECREMENT_COUNTER_ERROR');
             return null;
         }
     }
@@ -128,7 +128,7 @@ class RedisClient {
             const res = await client.hset(type, String(id), 0);
             return res;
         } catch (e) {
-            this._logger.error('REDIS_RESET_COUNTER_ERROR', e);
+            this._logger.error(e, 'RESET_COUNTER_ERROR');
             return null;
         }
     }
@@ -144,7 +144,7 @@ class RedisClient {
             const res = await client.publish(channel, JSON.stringify(data));
             return res;
         } catch (e) {
-            this._logger.error('REDIS_PUBLISH_ERROR', e, channel, payload);
+            this._logger.error(e, 'PUBLISH_ERROR');
             return null;
         }
     }
@@ -160,7 +160,7 @@ class RedisClient {
 
             this._pubSubCallbacks[channel] = this.wrapCallbackFn(callbackFn);
         } catch (e) {
-            this._logger.error('REDIS_SUBSCRIBE_ERROR', e);
+            this._logger.error(e, 'SUBSCRIBE_ERROR');
             return null;
         }
     }
@@ -172,7 +172,7 @@ class RedisClient {
             const res = await client.unsubscribe(channel);
             return res;
         } catch (e) {
-            this._logger.error('REDIS_UNSUBSCRIBE_ERROR', e);
+            this._logger.error(e, 'UNSUBSCRIBE_ERROR');
             return null;
         }
     }
@@ -185,7 +185,7 @@ class RedisClient {
                     callbackFn(data.payload);
                 }
             } catch (e) {
-                this._logger.error('REDIS_MESSAGE_CALLBACK_ERROR', e);
+                this._logger.error(e, 'MESSAGE_CALLBACK_ERROR');
             }
         };
     }
@@ -205,7 +205,7 @@ class RedisClient {
                 await this._subscriber.connect();
             }
         } catch (e) {
-            this._logger.error('REDIS_CONNECT_ERROR', e);
+            this._logger.error(e, 'CONNECT_ERROR');
         }
     }
 
@@ -239,7 +239,7 @@ class RedisClient {
             // wait next tick to fix bug with  connection just after disconnection
             return new Promise(resolve => setTimeout(resolve, 0));
         } catch (e) {
-            this._logger.error('REDIS_STOP_ERROR', e);
+            this._logger.error(e, 'STOP_ERROR');
         }
     }
 }

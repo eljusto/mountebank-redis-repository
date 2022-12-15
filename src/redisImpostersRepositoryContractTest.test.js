@@ -15,13 +15,14 @@ const create = require('./index').create;
 const mock = require('./testUtils/mock').mock;
 const deimposterize = require('./testUtils/deimposterize');
 const imposterize = require('./testUtils/imposterize');
-const logger = require('./testUtils/logger');
+const createLogger = require('./testUtils/createLogger');
 const stripFunctions = require('./testUtils/stripFunctions');
 
 describe('redisImpostersRepository', () => {
     let dbClient;
     let protocols;
     let repo;
+    const logger = createLogger();
 
     beforeAll(async() => {
         dbClient = new RedisClient({}, logger);
