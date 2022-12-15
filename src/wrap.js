@@ -57,22 +57,8 @@ function wrap(stub, imposterId, imposterStorage) {
      * @returns {Object} - the promise
      */
     cloned.nextResponse = async() => {
-        const meta = await imposterStorage.getMeta(imposterId, stubId);
-
-        if (!meta) {
-            throw new Error(`WRAP_NEXT_RESPONSE_ERROR, no meta for stubId ${ stubId }`);
-        }
-
-        const maxIndex = meta.orderWithRepeats.length;
-        const responseIndex = meta.orderWithRepeats[meta.nextIndex % maxIndex];
-
-        const responseId = meta.responseIds[responseIndex];
-        meta.nextIndex = (meta.nextIndex + 1) % maxIndex;
-
-        await imposterStorage.setMeta(imposterId, stubId, meta);
+        const responseConfig = await imposterStorage.getNextResponse(imposterId, stubId);
         await imposterStorage.incrementRequestCounter(imposterId);
-
-        const responseConfig = await imposterStorage.getResponse(responseId);
 
         if (responseConfig) {
             return createResponse(responseConfig);

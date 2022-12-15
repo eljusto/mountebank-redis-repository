@@ -190,11 +190,6 @@ class RedisClient {
         };
     }
 
-    async flushDb() {
-        const client = await this.getClient();
-        return await client.flushdb();
-    }
-
     async connectToServer() {
         try {
             this._isStopped = false;

@@ -2,13 +2,17 @@ const childProcess = require('child_process');
 
 const RedisClient = require('./RedisClient');
 
-const logger = require('./testUtils/logger');
+const createLogger = require('./testUtils/createLogger');
+
 let rs;
 let client;
+let logger;
 
 const REDIS_PORT = 3333;
 
 beforeAll(async() => {
+    logger = createLogger();
+
     rs = childProcess.spawn(
         'redis-server',
         [
@@ -29,6 +33,7 @@ beforeAll(async() => {
     rs.on('close', (code) => {
         logger.info(`child process exited with code ${ code }`);
     });
+
     client = new RedisClient({
         port: REDIS_PORT,
     }, logger);

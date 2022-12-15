@@ -86,7 +86,7 @@ function create(config, logger) {
             imposterConfig.port = imposter.port;
             imposterConfig.stubs = stubDefinitions;
 
-            await imposterStorage.addImposter(imposterConfig);
+            await imposterStorage.saveImposter(imposterConfig);
 
             addReference(imposter);
 

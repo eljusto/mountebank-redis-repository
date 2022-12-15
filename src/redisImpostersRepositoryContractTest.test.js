@@ -6,8 +6,6 @@
 
 /* eslint max-nested-callbacks: 0 */
 
-const RedisClient = require('./RedisClient');
-
 const { loadProtocols } = require('mountebank/src/models/protocols');
 
 const create = require('./index').create;
@@ -19,14 +17,9 @@ const createLogger = require('./testUtils/createLogger');
 const stripFunctions = require('./testUtils/stripFunctions');
 
 describe('redisImpostersRepository', () => {
-    let dbClient;
     let protocols;
     let repo;
     const logger = createLogger();
-
-    beforeAll(async() => {
-        dbClient = new RedisClient({}, logger);
-    });
 
     beforeEach(() => {
         repo = create({}, logger);
@@ -36,12 +29,8 @@ describe('redisImpostersRepository', () => {
     });
 
     afterEach(async() => {
+        await repo.deleteAll();
         await repo.stopAll();
-        await dbClient.flushDb();
-    });
-
-    afterAll(async() => {
-        await dbClient.stop();
     });
 
     describe('#add', () => {
@@ -77,7 +66,6 @@ describe('redisImpostersRepository', () => {
             expect(!saved.falsy()).toBeTruthy();
         });
     });
-
     describe('#get', () => {
         it('should return null if no imposter exists', async() => {
             const imposter = await repo.get(1);
