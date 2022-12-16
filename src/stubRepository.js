@@ -4,6 +4,8 @@ const clone = require('./clone');
 const wrap = require('./wrap');
 
 function stubRepository(imposterId, imposterStorage, logger) {
+    const _logger = logger.child({ _context: 'stub_repository' });
+
     /**
      * Returns the number of stubs for the imposter
      * @memberOf module:models/redisBackedImpostersRepository#
@@ -26,7 +28,7 @@ function stubRepository(imposterId, imposterStorage, logger) {
         try {
             stubs = await imposterStorage.getStubs(imposterId);
         } catch (e) {
-            logger.error('STUB_FIRST_ERROR', e);
+            _logger.error(e, 'STUB_FIRST_ERROR');
             stubs = [];
         }
 
@@ -91,35 +93,6 @@ function stubRepository(imposterId, imposterStorage, logger) {
         await insertAtIndex(stub, index);
     }
 
-    async function loadResponses(stub) {
-        if (!stub) {
-            throw new Error('STUB_LOAD_RESPONSES_ERROR, no stub');
-        }
-        if (!stub.meta?.id) {
-            return [];
-        }
-        try {
-            const meta = await imposterStorage.getMeta(imposterId, stub.meta.id);
-            if (!meta || !meta.responseIds) {
-                return [];
-            }
-
-            const responsePromises = meta.responseIds.map(id => imposterStorage.getResponse(id));
-            const res = await Promise.all(responsePromises);
-            return res;
-        } catch (e) {
-            logger.error('STUB_LOAD_RESPONSES_ERROR', e);
-            return [];
-        }
-    }
-
-    async function loadMatches(stub) {
-        if (!stub.meta?.id) {
-            return [];
-        }
-        return await imposterStorage.getMatches(stub.meta.id) || [];
-    }
-
     /**
      * Returns a JSON-convertible representation
      * @memberOf module:models/redisImpostersRepository#
@@ -131,32 +104,28 @@ function stubRepository(imposterId, imposterStorage, logger) {
         const imposter = await imposterStorage.getImposter(imposterId);
         if (!imposter) {
             if (options.debug) {
-                logger.warn('Can\'t find imposter with id ', imposterId);
+                _logger.warn(`Can't find imposter with id ${ imposterId }`);
             }
             return [];
         }
 
         if (!Array.isArray(imposter.stubs)) {
-            imposter.stubs = [];
+            return [];
         }
 
         try {
-            const responsePromises = imposter.stubs.map(loadResponses);
-            const stubResponses = await Promise.all(responsePromises);
-            const debugPromises = options.debug ? imposter.stubs.map(loadMatches) : [];
-            const matches = await Promise.all(debugPromises);
-
-            imposter.stubs.forEach((stub, index) => {
-                stub.responses = stubResponses[index];
-                if (options.debug && matches[index].length > 0) {
-                    stub.matches = matches[index];
+            for (let i = 0; i < imposter.stubs.length; i++) {
+                const stub = imposter.stubs[i];
+                stub.responses = await imposterStorage.getResponses(imposterId, stub.meta.id);
+                if (options.debug) {
+                    stub.matches = await imposterStorage.getMatches(stub.meta.id);
                 }
                 delete stub.meta;
-            });
+            }
 
             return imposter.stubs;
         } catch (e) {
-            logger.error('STUB_TO_JSON_ERROR', e);
+            _logger.error(e, 'STUB_TO_JSON_ERROR');
         }
     }
 
@@ -188,8 +157,7 @@ function stubRepository(imposterId, imposterStorage, logger) {
     async function addRequest(request) {
         const recordedRequest = clone(request);
         recordedRequest.timestamp = new Date().toJSON();
-        const res = await imposterStorage.addRequest(imposterId, recordedRequest);
-        return res;
+        return await imposterStorage.addRequest(imposterId, recordedRequest);
     }
 
     /**
@@ -198,13 +166,11 @@ function stubRepository(imposterId, imposterStorage, logger) {
      * @returns {Object} - the promise resolving to the array of requests
      */
     async function loadRequests() {
-        const res = await imposterStorage.getRequests(imposterId);
-        return res;
+        return await imposterStorage.getRequests(imposterId);
     }
 
     async function getNumberOfRequests() {
-        const res = await imposterStorage.getRequestCounter(imposterId);
-        return res || 0;
+        return await imposterStorage.getRequestCounter(imposterId) || 0;
     }
 
     /**

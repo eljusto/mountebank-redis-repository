@@ -7,7 +7,15 @@ const CHANNELS = {
     imposter_change: 'imposter_change',
     imposter_delete: 'imposter_delete',
     all_imposters_delete: 'all_imposters_delete',
+};
 
+const ENTITIES = {
+    imposter: 'imposter',
+    matchList: 'matches',
+    meta: 'meta',
+    requestCounter: 'requestCounter',
+    requestList: 'requests',
+    response: 'response',
 };
 
 function repeatsFor(response) {
@@ -17,8 +25,7 @@ function repeatsFor(response) {
 class ImposterStorage {
     constructor(options = {}, logger) {
         this.dbClient = new RedisClient(options, logger);
-        this.logger = logger;
-        this.idCounter = 0;
+        this._logger = logger.child({ _context: 'imposter_storage' });
     }
 
     async start() {
@@ -31,19 +38,22 @@ class ImposterStorage {
         return await this.dbClient.stop();
     }
 
-    generateId(prefix) {
+    _generateId(prefix) {
+        if (this._idCounter === undefined) {
+            this._idCounter = 0;
+        }
         const epoch = new Date().valueOf();
-        this.idCounter += 1;
-        return `${ prefix }-${ epoch }-${ process.pid }-${ this.idCounter }`;
+        this._idCounter += 1;
+        return `${ prefix }-${ epoch }-${ process.pid }-${ this._idCounter }`;
     }
 
-    async addImposter(imposter) {
+    async saveImposter(imposter) {
         try {
-            const res = await this.dbClient.setObject('imposter', imposter.port, imposter);
+            const res = await this.dbClient.setObject(ENTITIES.imposter, imposter.port, imposter);
             this.dbClient.publish(CHANNELS.imposter_change, imposter.port);
             return res;
         } catch (e) {
-            this.logger.error('CLIENT_ERROR addImposter', e);
+            this._logger.error(e, 'SAVE_IMPOSTER_ERROR');
             return null;
         }
     }
@@ -52,7 +62,7 @@ class ImposterStorage {
         try {
             return await this.dbClient.subscribe(channel, callbackFn);
         } catch (e) {
-            this.logger.error('CLIENT_ERROR subscribe', e);
+            this._logger.error(e, 'SUBSCRIBE_ERROR');
         }
     }
 
@@ -60,52 +70,45 @@ class ImposterStorage {
         try {
             return await this.dbClient.unsubscribe(channel);
         } catch (e) {
-            this.logger.error('CLIENT_ERROR unsubscribe', e);
-        }
-    }
-
-    async updateImposter(imposter) {
-        try {
-            const res = await this.dbClient.setObject('imposter', imposter.port, imposter);
-
-            this.dbClient.publish(CHANNELS.imposter_change, imposter.port);
-            return res;
-        } catch (e) {
-            this.logger.error('CLIENT_ERROR updateImposter', e);
-            return null;
+            this._logger.error(e, 'UNSUBSCRIBE_ERROR');
         }
     }
 
     async getAllImposters() {
         try {
-            return await this.dbClient.getAllObjects('imposter') || [];
+            return await this.dbClient.getAllObjects(ENTITIES.imposter) || [];
         } catch (e) {
-            this.logger.error('CLIENT_ERROR getAllImposters', e);
+            this._logger.error(e, 'GET_ALL_IMPOSTERS_ERROR');
             return [];
         }
     }
 
-    async getImposter(id) {
+    async getImposter(imposterId) {
         try {
-            const res = await this.dbClient.getObject('imposter', id);
+            const res = await this.dbClient.getObject(ENTITIES.imposter, imposterId);
             return res;
         } catch (e) {
-            this.logger.error('CLIENT_ERROR getImposter', e);
+            this._logger.error(e, 'GET_IMPOSTER_ERROR');
             return null;
         }
     }
 
-    async deleteImposter(id) {
+    async deleteImposter(imposterId) {
         try {
-            const res = await this.dbClient.delObject('imposter', id);
-            this.dbClient.publish(CHANNELS.imposter_delete, id);
-            // TODO:
-            // await this.dbClient.delAllObjects('meta');
-            // await this.dbClient.delAllObjects('responses');
-            // await this.dbClient.delAllObjects('matches');
+            const imposter = await this.dbClient.getObject(ENTITIES.imposter, imposterId);
+            const stubIds = imposter.stubs.map(stub => stub.meta.id);
+
+            const deleteStubPromises = stubIds.map(stubId => this._deleteStub(imposterId, stubId));
+            await Promise.all(deleteStubPromises);
+
+            const res = await this.dbClient.delObject(ENTITIES.imposter, imposterId);
+            this.deleteRequests(imposterId);
+
+            this.dbClient.publish(CHANNELS.imposter_delete, imposterId);
+
             return res;
         } catch (e) {
-            this.logger.error('CLIENT_ERROR deleteImposter', e);
+            this._logger.error(e, 'DELETE_IMPOSTER_ERROR');
             return null;
         }
     }
@@ -121,136 +124,121 @@ class ImposterStorage {
 
     async deleteAllImposters() {
         try {
-            const res = await this.dbClient.delAllObjects('imposter');
-            await this.dbClient.flushDb();
-            this.dbClient.publish(CHANNELS.all_imposters_delete);
+            await this.dbClient.delAllObjects(ENTITIES.imposter);
+            await this.dbClient.delAllObjects(ENTITIES.matchList);
+            await this.dbClient.delAllObjects(ENTITIES.meta);
+            await this.dbClient.delAllObjects(ENTITIES.requestCounter);
+            await this.dbClient.delAllObjects(ENTITIES.requestList);
+            await this.dbClient.delAllObjects(ENTITIES.response);
 
-            return res;
+            this.dbClient.publish(CHANNELS.all_imposters_delete);
         } catch (e) {
-            this.logger.error('CLIENT_ERROR deleteAllImposters', e);
+            this._logger.error(e, 'DELETE_ALL_IMPOSTERS_ERROR');
             return null;
         }
     }
 
     async addRequest(imposterId, request) {
         try {
-            return await this.dbClient.pushToObject('requests', imposterId, request);
+            return await this.dbClient.pushToObject(ENTITIES.requestList, imposterId, request);
         } catch (e) {
-            this.logger.error('CLIENT_ERROR addRequest', e);
+            this._logger.error(e, 'ADD_REQUEST_ERROR');
             return Promise.reject(e);
         }
     }
 
     async deleteRequests(imposterId) {
         try {
-            return await this.dbClient.delObject('requests', imposterId);
+            return await this.dbClient.delObject(ENTITIES.requestList, imposterId);
         } catch (e) {
-            this.logger.error('CLIENT_ERROR deleteRequests', e);
-            return Promise.reject(e);
-        }
-    }
-
-    async deleteAllRequests() {
-        try {
-            return await this.dbClient.delAllObjects('requests');
-        } catch (e) {
-            this.logger.error('CLIENT_ERROR deleteAllRequests', e);
+            this._logger.error(e, 'DELETE_REQUESTS_ERROR');
             return Promise.reject(e);
         }
     }
 
     async getRequests(imposterId) {
         try {
-            return await this.dbClient.getObject('requests', imposterId) || [];
+            return await this.dbClient.getObject(ENTITIES.requestList, imposterId) || [];
         } catch (e) {
-            this.logger.error('CLIENT_ERROR getRequests', e);
+            this._logger.error(e, 'GET_REQUESTS_ERROR');
             return Promise.reject(e);
         }
     }
 
-    async getResponse(responseId) {
+    async getResponses(imposterId, stubId) {
+        const meta = await this._getMeta(imposterId, stubId);
+        if (!meta || !meta.responseIds) {
+            return [];
+        }
+
+        const responsePromises = meta.responseIds.map(responseId => this._getResponse(responseId));
+        return await Promise.all(responsePromises);
+    }
+
+    async _getResponse(responseId) {
         try {
-            return await this.dbClient.getObject('responses', responseId);
+            return await this.dbClient.getObject(ENTITIES.response, responseId);
         } catch (e) {
-            this.logger.error('CLIENT_ERROR getResponses', e);
+            this._logger.error(e, 'GET_RESPONSE_ERROR');
             return Promise.reject(e);
         }
     }
 
-    async saveResponse(response) {
-        const responseId = this.generateId('response');
+    async _saveResponse(response) {
+        const responseId = this._generateId(ENTITIES.response);
         try {
-            await this.dbClient.setObject('responses', responseId, response);
+            await this.dbClient.setObject(ENTITIES.response, responseId, response);
             return responseId;
         } catch (e) {
-            this.logger.error('CLIENT_ERROR addRequest', e);
+            this._logger.error(e, 'SAVE_RESPONSE_ERROR');
             return Promise.reject(e);
         }
     }
 
     async deleteResponse(responseId) {
         try {
-            return await this.dbClient.delObject('responses', responseId);
+            return await this.dbClient.delObject(ENTITIES.response, responseId);
         } catch (e) {
-            this.logger.error('CLIENT_ERROR deleteResponses', e);
+            this._logger.error(e, 'DELETE_RESPONSE_ERROR');
             return Promise.reject(e);
         }
     }
 
-    async deleteAllResponses() {
+    async _deleteMeta(imposterId, stubId) {
         try {
-            return await this.dbClient.delAllObjects('responses');
-        } catch (e) {
-            this.logger.error('CLIENT_ERROR deleteAllResponses', e);
-            return Promise.reject(e);
-        }
-    }
-
-    async delMeta(imposterId, stubId) {
-        try {
-            const res = await this.dbClient.delObject('meta', [ imposterId, stubId ].join(':'));
+            const res = await this.dbClient.delObject(ENTITIES.meta, [ imposterId, stubId ].join(':'));
             return res;
         } catch (e) {
-            this.logger.error('CLIENT_ERROR delMeta', e);
+            this._logger.error(e, 'DELETE_META_ERROR');
             return Promise.reject(e);
         }
     }
 
-    async setMeta(imposterId, stubId, meta) {
+    async _saveMeta(imposterId, stubId, meta) {
         try {
-            const res = await this.dbClient.setObject('meta', [ imposterId, stubId ].join(':'), meta);
+            const res = await this.dbClient.setObject(ENTITIES.meta, [ imposterId, stubId ].join(':'), meta);
             return res;
         } catch (e) {
-            this.logger.error('CLIENT_ERROR setMeta', e);
+            this._logger.error(e, 'SET_META_ERROR');
             return Promise.reject(e);
         }
     }
 
-    async getMeta(imposterId, stubId) {
+    async _getMeta(imposterId, stubId) {
         try {
-            const res = await this.dbClient.getObject('meta', [ imposterId, stubId ].join(':'));
+            const res = await this.dbClient.getObject(ENTITIES.meta, [ imposterId, stubId ].join(':'));
             return res;
         } catch (e) {
-            this.logger.error('CLIENT_ERROR getMeta', e);
-            return Promise.reject(e);
-        }
-    }
-
-    async deleteAllMeta() {
-
-        try {
-            return await this.dbClient.delAllObjects('meta');
-        } catch (e) {
-            this.logger.error('CLIENT_ERROR deleteAllMeta', e);
+            this._logger.error(e, 'GET_META_ERROR');
             return Promise.reject(e);
         }
     }
 
     async addMatch(stubId, match) {
         try {
-            return await this.dbClient.pushToObject('matches', stubId, match);
+            return await this.dbClient.pushToObject(ENTITIES.matchList, stubId, match);
         } catch (e) {
-            this.logger.error('CLIENT_ERROR addMatch', e);
+            this._logger.error(e, 'ADD_MATCH_ERROR');
             return Promise.reject(e);
         }
     }
@@ -258,47 +246,38 @@ class ImposterStorage {
     async getMatches(stubId) {
 
         try {
-            return await this.dbClient.getObject('matches', stubId);
+            return await this.dbClient.getObject(ENTITIES.matchList, stubId);
         } catch (e) {
-            this.logger.error('CLIENT_ERROR getMatches', e);
+            this._logger.error(e, 'GET_MATCHES_ERROR');
             return Promise.reject(e);
         }
     }
 
     async deleteMatches(stubId) {
         try {
-            return await this.dbClient.delObject('match', stubId);
+            return await this.dbClient.delObject(ENTITIES.matchList, stubId);
         } catch (e) {
-            this.logger.error('CLIENT_ERROR deleteMatches', e);
-            return Promise.reject(e);
-        }
-    }
-
-    async deleteAllMatches() {
-        try {
-            return await this.dbClient.delAllObjects('match');
-        } catch (e) {
-            this.logger.error('CLIENT_ERROR deleteAllMatches', e);
+            this._logger.error(e, 'DELETE_MATCHES_ERROR');
             return Promise.reject(e);
         }
     }
 
     async getRequestCounter(imposterId) {
         try {
-            return await this.dbClient.getObject('requestCounter', imposterId);
+            return await this.dbClient.getObject(ENTITIES.requestCounter, imposterId);
         } catch (e) {
-            this.logger.error('CLIENT_ERROR getRequestCounter', e);
+            this._logger.error(e, 'GET_REQUEST_COUNTER_ERROR');
             return Promise.reject(e);
         }
     }
 
     async incrementRequestCounter(imposterId) {
         try {
-            await this.dbClient.incrementCounter('requestCounter', imposterId);
-            const val = await this.dbClient.getObject('requestCounter', imposterId);
+            await this.dbClient.incrementCounter(ENTITIES.requestCounter, imposterId);
+            const val = await this.dbClient.getObject(ENTITIES.requestCounter, imposterId);
             return val;
         } catch (e) {
-            this.logger.error('CLIENT_ERROR incrementRequestCounter', e);
+            this._logger.error(e, 'INCREMENT_REQUEST_COUNTER_ERROR');
             return Promise.reject(e);
         }
     }
@@ -320,7 +299,7 @@ class ImposterStorage {
         } else {
             imposter.stubs.splice(index, 0, stubDefinition);
         }
-        await this.updateImposter(imposter);
+        await this.saveImposter(imposter);
     }
 
     async deleteStubAtIndex(imposterId, index) {
@@ -336,13 +315,26 @@ class ImposterStorage {
             throw errors.MissingResourceError(`no stub at index ${ index }`);
         }
 
-        imposter.stubs.splice(index, 1);
-        await this.updateImposter(imposter);
+        const deletedStub = imposter.stubs.splice(index, 1)[0];
 
-    // FIXME: remove responses and meta
-    // await this.addResponse(responseId, responses[i]);
-    // }
-    // await this.setMeta(imposterId, stubId, meta);
+        await this._deleteStub(imposterId, deletedStub.meta.id);
+
+        await this.saveImposter(imposter);
+    }
+
+    async _deleteStub(imposterId, stubId) {
+        if (!stubId) {
+            return;
+        }
+
+        const meta = await this._getMeta(imposterId, stubId);
+        if (meta) {
+            const deleteResponsePromises = meta.responseIds.map(id => this.deleteResponse(id));
+            await Promise.all(deleteResponsePromises);
+            await this._deleteMeta(imposterId, stubId);
+        }
+
+        await this.deleteMatches(stubId);
     }
 
     async overwriteAllStubs(imposterId, stubs = []) {
@@ -351,38 +343,61 @@ class ImposterStorage {
             return;
         }
 
-        // TODO: remove all stubs and stub data
+        if (Array.isArray(imposter.stubs)) {
+            const deleteStubPromises = imposter.stubs.map(stub => this._deleteStub(imposterId, stub.meta.id));
+            await Promise.all(deleteStubPromises);
+        }
+
         const stubDefinitions = [];
         for (let i = 0; i < stubs.length; i += 1) {
             stubDefinitions.push(await this.saveStubMetaAndResponses(imposterId, stubs[i]));
         }
 
         imposter.stubs = stubDefinitions;
-        await this.updateImposter(imposter);
+        await this.saveImposter(imposter);
     }
 
     async addResponse(imposterId, stubId, response) {
 
-        const meta = await this.getMeta(imposterId, stubId);
+        const meta = await this._getMeta(imposterId, stubId);
         if (!meta) {
             return null;
         }
 
-        const responseId = await this.saveResponse(response);
+        const responseId = await this._saveResponse(response);
         const responseIndex = meta.responseIds.length;
         meta.responseIds.push(responseId);
         for (let repeats = 0; repeats < repeatsFor(response); repeats += 1) {
             meta.orderWithRepeats.push(responseIndex);
         }
-        await this.setMeta(imposterId, stubId, meta);
+        await this._saveMeta(imposterId, stubId, meta);
         return meta;
+    }
+
+    async getNextResponse(imposterId, stubId) {
+        const meta = await this._getMeta(imposterId, stubId);
+
+        if (!meta) {
+            throw new Error(`GET_NEXT_RESPONSE_ERROR, no meta for stubId ${ stubId }`);
+        }
+
+        const maxIndex = meta.orderWithRepeats.length;
+        const responseIndex = meta.orderWithRepeats[meta.nextIndex % maxIndex];
+
+        const responseId = meta.responseIds[responseIndex];
+        meta.nextIndex = (meta.nextIndex + 1) % maxIndex;
+
+        await this._saveMeta(imposterId, stubId, meta);
+
+        const responseConfig = await this._getResponse(responseId);
+        return responseConfig;
     }
 
     async saveStubMetaAndResponses(imposterId, stub) {
         if (!stub) {
             return;
         }
-        const stubId = this.generateId('stub');
+        const stubId = this._generateId('stub');
         const stubDefinition = {
             meta: { id: stubId },
         };
@@ -397,7 +412,7 @@ class ImposterStorage {
         }
 
         for (let i = 0; i < responses.length; i += 1) {
-            const responseId = await this.saveResponse(responses[i]);
+            const responseId = await this._saveResponse(responses[i]);
 
             meta.responseIds.push(responseId);
 
@@ -405,7 +420,7 @@ class ImposterStorage {
                 meta.orderWithRepeats.push(i);
             }
         }
-        await this.setMeta(imposterId, stubId, meta);
+        await this._saveMeta(imposterId, stubId, meta);
 
         return stubDefinition;
     }
