@@ -1,15 +1,40 @@
 'use strict';
 
+const { GenericContainer } = require('testcontainers');
+
 const ResponseResolver = require('mountebank/src/models/responseResolver');
 const helpers = require('mountebank/src/util/helpers');
 const util = require('util');
 
+const REDIS_PORT = 6379;
+
 const mock = require('./testUtils/mock').mock;
 const imposterize = require('./testUtils/imposterize');
 const createLogger = require('./testUtils/createLogger');
-const logger = createLogger();
-const repo = require('./index').create({}, logger);
-const createStubsRepository = repo.stubsFor;
+const create = require('./index').create;
+
+let logger;
+let container;
+let repo;
+let createStubsRepository;
+
+beforeAll(async() => {
+    logger = createLogger();
+
+    container = new GenericContainer('redis');
+    container.withExposedPorts(REDIS_PORT);
+    container = await container.start();
+
+    repo = create({
+        impostersRepositoryConfig: {
+            redisOptions: {
+                host: container.getHost(),
+                port: container.getMappedPort(REDIS_PORT),
+            },
+        },
+    }, logger);
+    createStubsRepository = repo.stubsFor;
+});
 
 beforeEach(async() => {
     return await repo.add(imposterize({ port: 1 }));
@@ -21,6 +46,7 @@ afterEach(async() => {
 
 afterAll(async() => {
     await repo.stopAll();
+    await container.stop();
 });
 
 describe('responseResolver', () => {

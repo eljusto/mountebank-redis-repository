@@ -1,52 +1,31 @@
-const childProcess = require('child_process');
+const { GenericContainer } = require('testcontainers');
 
 const RedisClient = require('./RedisClient');
 
 const createLogger = require('./testUtils/createLogger');
 
-let rs;
 let client;
 let logger;
+let container;
 
-const REDIS_PORT = 3333;
+const REDIS_PORT = 6379;
 
 beforeAll(async() => {
     logger = createLogger();
 
-    rs = childProcess.spawn(
-        'redis-server',
-        [
-            `--port ${ REDIS_PORT }`,
-            '--save ""',
-            '--appendonly no',
-            '--dbfilename ""',
-            '--appendfilename ""',
-            '--appendfsync no',
-        ],
-        { cwd: process.cwd(), env: process.env, stdio: [ 'inherit', 'pipe', 'inherit' ] },
-    );
-
-    rs.stdout.on('data', (data) => {
-        logger.info(`stdout: ${ data }`);
-    });
-
-    rs.on('close', (code) => {
-        logger.info(`child process exited with code ${ code }`);
-    });
+    container = new GenericContainer('redis');
+    container.withExposedPorts(REDIS_PORT);
+    container = await container.start();
 
     client = new RedisClient({
-        port: REDIS_PORT,
+        host: container.getHost(),
+        port: container.getMappedPort(REDIS_PORT),
     }, logger);
 });
 
-afterAll(() => {
-    rs.removeAllListeners('data');
-    rs.removeAllListeners('close');
-    client.stop();
-    rs.kill();
-    return new Promise((resolve) => {
-        setTimeout(() => resolve(), 1000);
-    });
+afterAll(async() => {
+    await client.stop();
+    await container.stop();
 });
 
 it('write and read object', async() => {
