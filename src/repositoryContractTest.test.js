@@ -1,10 +1,12 @@
 'use strict';
 
 /**
-* Tests the semantics of each repository implementation to ensure they function equivalently
-*/
+ * Tests the semantics of repository implementation
+ */
 
 /* eslint max-nested-callbacks: 0 */
+
+const { GenericContainer } = require('testcontainers');
 
 const { loadProtocols } = require('mountebank/src/models/protocols');
 
@@ -16,13 +18,31 @@ const imposterize = require('./testUtils/imposterize');
 const createLogger = require('./testUtils/createLogger');
 const stripFunctions = require('./testUtils/stripFunctions');
 
+const REDIS_PORT = 6379;
+
 describe('redisImpostersRepository', () => {
     let protocols;
     let repo;
-    const logger = createLogger();
+    let logger;
+    let container;
+
+    beforeAll(async() => {
+        logger = createLogger();
+
+        container = new GenericContainer('redis');
+        container.withExposedPorts(REDIS_PORT);
+        container = await container.start();
+    });
 
     beforeEach(() => {
-        repo = create({}, logger);
+        repo = create({
+            impostersRepositoryConfig: {
+                redisOptions: {
+                    host: container.getHost(),
+                    port: container.getMappedPort(REDIS_PORT),
+                },
+            },
+        }, logger);
 
         const options = { log: { level: 'info' } };
         protocols = loadProtocols(options, '', { baseLogger: logger }, () => true, repo);
@@ -31,6 +51,10 @@ describe('redisImpostersRepository', () => {
     afterEach(async() => {
         await repo.deleteAll();
         await repo.stopAll();
+    });
+
+    afterAll(async() => {
+        await container.stop();
     });
 
     describe('#add', () => {

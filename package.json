@@ -5,7 +5,8 @@
   "main": "src/index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "redis-test": "echo 'Be sure redis-server is installed' && jest src/RedisClient.interation.test.js"
+    "podman:up": "sh ./podman_up.sh",
+    "test:macos": "TESTCONTAINERS_RYUK_DISABLED=true DEBUG=testcontainers* DOCKER_HOST=unix:///tmp/podman.sock npx jest ./src/**.test.js --runInBand --testTimeout=10000"
   },
   "keywords": [
     "redis",
@@ -15,6 +16,9 @@
   "author": "Boris Zhidkov <eljusto@yandex-team.ru>",
   "license": "ISC",
   "devDependencies": {
+    "@babel/cli": "^7.19.3",
+    "@babel/core": "^7.20.5",
+    "@babel/preset-env": "^7.20.2",
     "@typescript-eslint/eslint-plugin": "^5.42.1",
     "eslint": "^8.27.0",
     "eslint-plugin-import": "^2.26.0",
@@ -24,7 +28,9 @@
     "eslint-plugin-sort-destructure-keys": "^1.4.0",
     "jest": "^29.3.1",
     "mountebank": "^2.8.1",
-    "mountebank-tests": "^0.0.3"
+    "mountebank-tests": "^0.0.3",
+    "node-fetch": "^3.3.0",
+    "testcontainers": "^9.1.0"
   },
   "dependencies": {
     "ioredis": "^5.2.4"
