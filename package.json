@@ -4,6 +4,7 @@
   "description": "Imposters respository to store mountebank imposters in Redis db",
   "main": "src/index.js",
   "scripts": {
+    "lint": "eslint .",
     "test": "jest ./src/**.test.js --runInBand --testTimeout=10000",
     "podman:up": "sh ./podman_up.sh",
     "test:macos": "TESTCONTAINERS_RYUK_DISABLED=true DEBUG=testcontainers* DOCKER_HOST=unix:///tmp/podman.sock jest ./src/**.test.js --runInBand --testTimeout=10000"
