@@ -2,8 +2,6 @@
 
 Plugin for [Mountebank](https://github.com/bbyars/mountebank?ysclid=lb2811rutl60384091) to distributedly store imposters in Redis Database.
 
-Under heavy development and testing =)
-
 ## Usage
 
 It's recommended to create a wrapper around this plugin to pass on the configuration parameters and your own logger.
@@ -25,7 +23,7 @@ const repoConfig = {
 
 function create(config) {
   const newConfig = {
-    config,
+    ...config,
     impostersRepositoryConfig: repoConfig,
   };
   return repo.create(newConfig, logger);
