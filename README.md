@@ -1,6 +1,6 @@
 # mountebank-redis-repository
 
-Plugin for [Mountebank](https://github.com/bbyars/mountebank?ysclid=lb2811rutl60384091) to distributedly store imposters in Redis Database.
+Plugin for [Mountebank](https://github.com/bbyars/mountebank?ysclid=lb2811rutl60384091) that allows to store imposters distributedly using a Redis database.
 
 ## Usage
 
@@ -34,4 +34,4 @@ module.exports = {
 };
 ```
 
-Then, run mb with path to this file: `mb --impostersRepository=./impostersRepo.js`.
+Then, run mb with the path to this file: `mb --impostersRepository=./impostersRepo.js`.
