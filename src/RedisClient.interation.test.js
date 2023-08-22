@@ -1,6 +1,6 @@
 const { GenericContainer } = require('testcontainers');
 
-const RedisClient = require('./RedisClient');
+const RedisClient = require('./RedisClient').default;
 
 const createLogger = require('./testUtils/createLogger');
 
@@ -10,6 +10,7 @@ let container;
 
 const REDIS_PORT = 6379;
 
+jest.setTimeout(15000);
 beforeAll(async() => {
     logger = createLogger();
 

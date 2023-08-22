@@ -1,9 +1,21 @@
-'use strict';
+import wrap from './wrap';
 
-const clone = require('./clone');
-const wrap = require('./wrap');
+import type {
+    Stub,
+    MbRequest,
+    RecordedMbRequest,
+    MbResponse,
+    MbOptions,
+    ImposterId,
+    Logger,
+    StubDefinition,
+    StubFilterFunction,
+    WrappedStub,
+    OutgoingStub,
+} from './types';
+import type ImposterStorage from './ImposterStorage';
 
-function stubRepository(imposterId, imposterStorage, logger) {
+function stubRepository(imposterId: ImposterId, imposterStorage: ImposterStorage, logger: Logger) {
     const _logger = logger.child({ _context: 'stub_repository' });
 
     /**
@@ -11,20 +23,14 @@ function stubRepository(imposterId, imposterStorage, logger) {
      * @memberOf module:models/redisBackedImpostersRepository#
      * @returns {Object} - the promise
      */
-    async function count() {
+    async function count(): Promise<number> {
         const stubs = await imposterStorage.getStubs(imposterId);
         return stubs.length;
     }
 
-    /**
-     * Returns the first stub whose preidicates matches the filter
-     * @memberOf module:models/redisBackedImpostersRepository#
-     * @param {Function} filter - the filter function
-     * @param {Number} startIndex - the index to to start searching
-     * @returns {Object} - the promise
-     */
-    async function first(filter, startIndex = 0) {
-        let stubs;
+    // Returns the first stub whose preidicates matches the filter
+    async function first(filter: StubFilterFunction, startIndex = 0): Promise<{ success: boolean; stub: WrappedStub }> {
+        let stubs: Array<StubDefinition>;
         try {
             stubs = await imposterStorage.getStubs(imposterId);
         } catch (e) {
@@ -37,7 +43,7 @@ function stubRepository(imposterId, imposterStorage, logger) {
                 return { success: true, stub: wrap(stubs[i], imposterId, imposterStorage) };
             }
         }
-        return { success: false, stub: wrap() };
+        return { success: false, stub: wrap(undefined, imposterId, imposterStorage) };
     }
 
     /**
@@ -46,7 +52,7 @@ function stubRepository(imposterId, imposterStorage, logger) {
      * @param {Object} stub - the stub to add
      * @returns {Object} - the promise
      */
-    async function add(stub) {
+    async function add(stub: Stub): Promise<void> {
         return await imposterStorage.addStub(imposterId, stub);
     }
 
@@ -57,7 +63,7 @@ function stubRepository(imposterId, imposterStorage, logger) {
      * @param {Number} index - the index to insert the new stub at
      * @returns {Object} - the promise
      */
-    async function insertAtIndex(stub, index) {
+    async function insertAtIndex(stub: Stub, index: number): Promise<void> {
         return await imposterStorage.addStub(imposterId, stub, index);
     }
 
@@ -67,7 +73,7 @@ function stubRepository(imposterId, imposterStorage, logger) {
      * @param {Number} index - the index of the stub to delete
      * @returns {Object} - the promise
      */
-    async function deleteAtIndex(index) {
+    async function deleteAtIndex(index: number): Promise<void> {
         await imposterStorage.deleteStubAtIndex(imposterId, index);
     }
 
@@ -77,7 +83,7 @@ function stubRepository(imposterId, imposterStorage, logger) {
      * @param {Object} newStubs - the new list of stubs
      * @returns {Object} - the promise
      */
-    async function overwriteAll(newStubs) {
+    async function overwriteAll(newStubs: Array<Stub>): Promise<void> {
         await imposterStorage.overwriteAllStubs(imposterId, newStubs);
     }
 
@@ -88,7 +94,7 @@ function stubRepository(imposterId, imposterStorage, logger) {
      * @param {Number} index - the index of the stub to overwrite
      * @returns {Object} - the promise
      */
-    async function overwriteAtIndex(stub, index) {
+    async function overwriteAtIndex(stub: Stub, index: number): Promise<void> {
         await deleteAtIndex(index);
         await insertAtIndex(stub, index);
     }
@@ -100,7 +106,7 @@ function stubRepository(imposterId, imposterStorage, logger) {
      * @param {Boolean} options.debug - If true, includes debug information
      * @returns {Object} - the promise resolving to the JSON object
      */
-    async function toJSON(options = {}) {
+    async function toJSON(options: MbOptions = {}): Promise<Array<OutgoingStub>> {
         const imposter = await imposterStorage.getImposter(imposterId);
         if (!imposter) {
             if (options.debug) {
@@ -113,23 +119,33 @@ function stubRepository(imposterId, imposterStorage, logger) {
             return [];
         }
 
+        const result: Array<OutgoingStub> = [];
+
         try {
             for (let i = 0; i < imposter.stubs.length; i++) {
-                const stub = imposter.stubs[i];
-                stub.responses = await imposterStorage.getResponses(imposterId, stub.meta.id);
+                const { meta, ...stubDefinition } = imposter.stubs[i];
+                const responses = await imposterStorage.getResponses(imposterId, meta.id);
+                const stub: OutgoingStub = {
+                    ...stubDefinition,
+                    responses,
+                };
                 if (options.debug) {
-                    stub.matches = await imposterStorage.getMatches(stub.meta.id);
+                    const matches = await imposterStorage.getMatches(meta.id);
+                    if (matches !== null) {
+                        stub.matches = matches;
+                    }
                 }
-                delete stub.meta;
+                result.push(stub);
             }
 
-            return imposter.stubs;
+            return result;
         } catch (e) {
             _logger.error(e, 'STUB_TO_JSON_ERROR');
+            return [];
         }
     }
 
-    function isRecordedResponse(response) {
+    function isRecordedResponse(response: MbResponse): boolean {
         return response.is && typeof response.is._proxyResponseTime === 'number';
     }
 
@@ -138,13 +154,13 @@ function stubRepository(imposterId, imposterStorage, logger) {
      * @memberOf module:models/redisImpostersRepository#
      * @returns {Object} - Promise
      */
-    async function deleteSavedProxyResponses() {
+    async function deleteSavedProxyResponses(): Promise<void> {
         const allStubs = await toJSON();
         allStubs.forEach(stub => {
-            stub.responses = stub.responses.filter(response => !isRecordedResponse(response));
+            stub.responses = stub.responses?.filter(response => !isRecordedResponse(response));
         });
 
-        const nonProxyStubs = allStubs.filter(stub => stub.responses.length > 0);
+        const nonProxyStubs = allStubs.filter(stub => stub?.responses && stub.responses.length > 0);
         return overwriteAll(nonProxyStubs);
     }
 
@@ -154,9 +170,11 @@ function stubRepository(imposterId, imposterStorage, logger) {
      * @param {Object} request - the request
      * @returns {Object} - the promise
      */
-    async function addRequest(request) {
-        const recordedRequest = clone(request);
-        recordedRequest.timestamp = new Date().toJSON();
+    async function addRequest(request: MbRequest): Promise<number | null> {
+        const recordedRequest: RecordedMbRequest = {
+            ...structuredClone(request),
+            timestamp: new Date().toJSON(),
+        };
         return await imposterStorage.addRequest(imposterId, recordedRequest);
     }
 
@@ -165,7 +183,7 @@ function stubRepository(imposterId, imposterStorage, logger) {
      * @memberOf module:models/redisImpostersRepository#
      * @returns {Object} - the promise resolving to the array of requests
      */
-    async function loadRequests() {
+    async function loadRequests(): Promise<Array<MbRequest>> {
         return await imposterStorage.getRequests(imposterId);
     }
 
@@ -178,7 +196,7 @@ function stubRepository(imposterId, imposterStorage, logger) {
      * @memberOf module:models/redisImpostersRepository#
      * @returns {Object} - Promise
      */
-    async function deleteSavedRequests() {
+    async function deleteSavedRequests(): Promise<number> {
         return await imposterStorage.deleteRequests(imposterId);
     }
 
@@ -199,4 +217,4 @@ function stubRepository(imposterId, imposterStorage, logger) {
     };
 }
 
-module.exports = stubRepository;
+export default stubRepository;

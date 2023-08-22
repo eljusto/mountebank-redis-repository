@@ -1,29 +1,51 @@
-'use strict';
+import RedisClient from './RedisClient';
+import type { ChannelCallback } from './RedisClient';
+import errors from 'mountebank/src/util/errors';
+import type { Stub, StubMatch, StubMeta, MbRequest, MbResponse, ImposterId, ImposterConfig, StubDefinition, Logger } from './types';
+import type { RedisOptions } from 'ioredis';
 
-const RedisClient = require('./RedisClient');
-const errors = require('mountebank/src/util/errors');
+export enum CHANNEL_IDS {
+    imposter_change = 'imposter_change',
+    imposter_delete = 'imposter_delete',
+    all_imposters_delete = 'all_imposters_delete',
+}
 
-const CHANNELS = {
-    imposter_change: 'imposter_change',
-    imposter_delete: 'imposter_delete',
-    all_imposters_delete: 'all_imposters_delete',
+type CHANNELS = {
+    [ CHANNEL_IDS.imposter_change ]: ImposterId;
+    [ CHANNEL_IDS.imposter_delete ]: ImposterId;
+    [ CHANNEL_IDS.all_imposters_delete ]: void;
+}
+
+enum ENTITY_IDS {
+    imposter ='imposter',
+    matchList ='matches',
+    meta = 'meta',
+    requestCounter ='requestCounter',
+    requestList = 'requests',
+    response = 'response',
+    stub = 'stub',
+}
+
+type ENTITIES = {
+    [ ENTITY_IDS.imposter ]: ImposterConfig;
+    [ ENTITY_IDS.matchList ]: Array<StubMatch>;
+    [ ENTITY_IDS.meta ]: StubMeta;
+    [ ENTITY_IDS.requestCounter ]: number;
+    [ ENTITY_IDS.requestList ]: Array<MbRequest>;
+    [ ENTITY_IDS.response ]: MbResponse;
+    [ ENTITY_IDS.stub ]: Stub;
 };
 
-const ENTITIES = {
-    imposter: 'imposter',
-    matchList: 'matches',
-    meta: 'meta',
-    requestCounter: 'requestCounter',
-    requestList: 'requests',
-    response: 'response',
-};
-
-function repeatsFor(response) {
+function repeatsFor(response: MbResponse) {
     return response.repeat || 1;
 }
 
-class ImposterStorage {
-    constructor(options = {}, logger) {
+export class ImposterStorage {
+    dbClient: RedisClient<CHANNELS, ENTITIES>;
+    _logger: Logger;
+    _idCounter = 0;
+
+    constructor(options: RedisOptions, logger: Logger) {
         this.dbClient = new RedisClient(options, logger);
         this._logger = logger.child({ _context: 'imposter_storage' });
     }
@@ -38,19 +60,16 @@ class ImposterStorage {
         return await this.dbClient.stop();
     }
 
-    _generateId(prefix) {
-        if (this._idCounter === undefined) {
-            this._idCounter = 0;
-        }
+    _generateId(prefix: ENTITY_IDS | 'stub') {
         const epoch = new Date().valueOf();
         this._idCounter += 1;
         return `${ prefix }-${ epoch }-${ process.pid }-${ this._idCounter }`;
     }
 
-    async saveImposter(imposter) {
+    async saveImposter(imposter: ImposterConfig) {
         try {
-            const res = await this.dbClient.setObject(ENTITIES.imposter, imposter.port, imposter);
-            this.dbClient.publish(CHANNELS.imposter_change, imposter.port);
+            const res = await this.dbClient.setObject(ENTITY_IDS.imposter, imposter.port, imposter);
+            this.dbClient.publish(CHANNEL_IDS.imposter_change, imposter.port);
             return res;
         } catch (e) {
             this._logger.error(e, 'SAVE_IMPOSTER_ERROR');
@@ -58,15 +77,15 @@ class ImposterStorage {
         }
     }
 
-    async subscribe(channel, callbackFn) {
+    async subscribe<T extends CHANNEL_IDS>(channel: T, callbackFn: ChannelCallback<CHANNELS[T]>) {
         try {
-            return await this.dbClient.subscribe(channel, callbackFn);
+            return await this.dbClient.subscribe<T>(channel, callbackFn);
         } catch (e) {
             this._logger.error(e, 'SUBSCRIBE_ERROR');
         }
     }
 
-    async unsubscribe(channel) {
+    async unsubscribe(channel: CHANNEL_IDS) {
         try {
             return await this.dbClient.unsubscribe(channel);
         } catch (e) {
@@ -74,18 +93,18 @@ class ImposterStorage {
         }
     }
 
-    async getAllImposters() {
+    async getAllImposters(): Promise<Array<ImposterConfig>> {
         try {
-            return await this.dbClient.getAllObjects(ENTITIES.imposter) || [];
+            return await this.dbClient.getAllObjects(ENTITY_IDS.imposter) || [];
         } catch (e) {
             this._logger.error(e, 'GET_ALL_IMPOSTERS_ERROR');
             return [];
         }
     }
 
-    async getImposter(imposterId) {
+    async getImposter(imposterId: ImposterId): Promise<ImposterConfig | null> {
         try {
-            const res = await this.dbClient.getObject(ENTITIES.imposter, imposterId);
+            const res = await this.dbClient.getObject<ENTITY_IDS.imposter>(ENTITY_IDS.imposter, imposterId);
             return res;
         } catch (e) {
             this._logger.error(e, 'GET_IMPOSTER_ERROR');
@@ -93,18 +112,21 @@ class ImposterStorage {
         }
     }
 
-    async deleteImposter(imposterId) {
+    async deleteImposter(imposterId: ImposterId) {
         try {
-            const imposter = await this.dbClient.getObject(ENTITIES.imposter, imposterId);
+            const imposter = await this.dbClient.getObject<ENTITY_IDS.imposter>(ENTITY_IDS.imposter, imposterId);
+            if (imposter === null) {
+                return;
+            }
             const stubIds = imposter.stubs.map(stub => stub.meta.id);
 
-            const deleteStubPromises = stubIds.map(stubId => this._deleteStub(imposterId, stubId));
+            const deleteStubPromises = stubIds.map((stubId: string) => this._deleteStub(imposterId, stubId));
             await Promise.all(deleteStubPromises);
 
-            const res = await this.dbClient.delObject(ENTITIES.imposter, imposterId);
+            const res = await this.dbClient.delObject(ENTITY_IDS.imposter, imposterId);
             this.deleteRequests(imposterId);
 
-            this.dbClient.publish(CHANNELS.imposter_delete, imposterId);
+            this.dbClient.publish<CHANNEL_IDS.imposter_delete>(CHANNEL_IDS.imposter_delete, imposterId);
 
             return res;
         } catch (e) {
@@ -113,7 +135,7 @@ class ImposterStorage {
         }
     }
 
-    async getStubs(imposterId) {
+    async getStubs(imposterId: ImposterId): Promise<Array<StubDefinition>> {
         const imposter = await this.getImposter(imposterId);
         if (!imposter || !Array.isArray(imposter.stubs)) {
             return [];
@@ -124,70 +146,71 @@ class ImposterStorage {
 
     async deleteAllImposters() {
         try {
-            await this.dbClient.delAllObjects(ENTITIES.imposter);
-            await this.dbClient.delAllObjects(ENTITIES.matchList);
-            await this.dbClient.delAllObjects(ENTITIES.meta);
-            await this.dbClient.delAllObjects(ENTITIES.requestCounter);
-            await this.dbClient.delAllObjects(ENTITIES.requestList);
-            await this.dbClient.delAllObjects(ENTITIES.response);
+            await this.dbClient.delAllObjects(ENTITY_IDS.imposter);
+            await this.dbClient.delAllObjects(ENTITY_IDS.matchList);
+            await this.dbClient.delAllObjects(ENTITY_IDS.meta);
+            await this.dbClient.delAllObjects(ENTITY_IDS.requestCounter);
+            await this.dbClient.delAllObjects(ENTITY_IDS.requestList);
+            await this.dbClient.delAllObjects(ENTITY_IDS.response);
 
-            this.dbClient.publish(CHANNELS.all_imposters_delete);
+            this.dbClient.publish<CHANNEL_IDS.all_imposters_delete>(CHANNEL_IDS.all_imposters_delete, undefined);
         } catch (e) {
             this._logger.error(e, 'DELETE_ALL_IMPOSTERS_ERROR');
             return null;
         }
     }
 
-    async addRequest(imposterId, request) {
+    async addRequest(imposterId: ImposterId, request: MbRequest) {
         try {
-            return await this.dbClient.pushToObject(ENTITIES.requestList, imposterId, request);
+            return await this.dbClient.pushToObject<ENTITY_IDS.requestList>(ENTITY_IDS.requestList, imposterId, request);
         } catch (e) {
             this._logger.error(e, 'ADD_REQUEST_ERROR');
             return Promise.reject(e);
         }
     }
 
-    async deleteRequests(imposterId) {
+    async deleteRequests(imposterId: ImposterId) {
         try {
-            return await this.dbClient.delObject(ENTITIES.requestList, imposterId);
+            return await this.dbClient.delObject(ENTITY_IDS.requestList, imposterId);
         } catch (e) {
             this._logger.error(e, 'DELETE_REQUESTS_ERROR');
             return Promise.reject(e);
         }
     }
 
-    async getRequests(imposterId) {
+    async getRequests(imposterId: ImposterId): Promise<Array<MbRequest>> {
         try {
-            return await this.dbClient.getObject(ENTITIES.requestList, imposterId) || [];
+            return await this.dbClient.getObject<ENTITY_IDS.requestList>(ENTITY_IDS.requestList, imposterId) || [];
         } catch (e) {
             this._logger.error(e, 'GET_REQUESTS_ERROR');
             return Promise.reject(e);
         }
     }
 
-    async getResponses(imposterId, stubId) {
+    async getResponses(imposterId: ImposterId, stubId: string): Promise<Array<MbResponse>> {
         const meta = await this._getMeta(imposterId, stubId);
         if (!meta || !meta.responseIds) {
             return [];
         }
 
         const responsePromises = meta.responseIds.map(responseId => this._getResponse(responseId));
-        return await Promise.all(responsePromises);
+        const responses = await Promise.all(responsePromises);
+        return responses.filter(Boolean) as unknown as Array<MbResponse>;
     }
 
-    async _getResponse(responseId) {
+    async _getResponse(responseId: string): Promise<MbResponse | null> {
         try {
-            return await this.dbClient.getObject(ENTITIES.response, responseId);
+            return await this.dbClient.getObject(ENTITY_IDS.response, responseId);
         } catch (e) {
             this._logger.error(e, 'GET_RESPONSE_ERROR');
             return Promise.reject(e);
         }
     }
 
-    async _saveResponse(response) {
-        const responseId = this._generateId(ENTITIES.response);
+    async _saveResponse(response: MbResponse) {
+        const responseId = this._generateId(ENTITY_IDS.response);
         try {
-            await this.dbClient.setObject(ENTITIES.response, responseId, response);
+            await this.dbClient.setObject(ENTITY_IDS.response, responseId, response);
             return responseId;
         } catch (e) {
             this._logger.error(e, 'SAVE_RESPONSE_ERROR');
@@ -195,18 +218,18 @@ class ImposterStorage {
         }
     }
 
-    async deleteResponse(responseId) {
+    async deleteResponse(responseId: string) {
         try {
-            return await this.dbClient.delObject(ENTITIES.response, responseId);
+            return await this.dbClient.delObject(ENTITY_IDS.response, responseId);
         } catch (e) {
             this._logger.error(e, 'DELETE_RESPONSE_ERROR');
             return Promise.reject(e);
         }
     }
 
-    async _deleteMeta(imposterId, stubId) {
+    async _deleteMeta(imposterId: ImposterId, stubId: string) {
         try {
-            const res = await this.dbClient.delObject(ENTITIES.meta, [ imposterId, stubId ].join(':'));
+            const res = await this.dbClient.delObject(ENTITY_IDS.meta, [ imposterId, stubId ].join(':'));
             return res;
         } catch (e) {
             this._logger.error(e, 'DELETE_META_ERROR');
@@ -214,9 +237,9 @@ class ImposterStorage {
         }
     }
 
-    async _saveMeta(imposterId, stubId, meta) {
+    async _saveMeta(imposterId: ImposterId, stubId: string, meta: StubMeta) {
         try {
-            const res = await this.dbClient.setObject(ENTITIES.meta, [ imposterId, stubId ].join(':'), meta);
+            const res = await this.dbClient.setObject(ENTITY_IDS.meta, [ imposterId, stubId ].join(':'), meta);
             return res;
         } catch (e) {
             this._logger.error(e, 'SET_META_ERROR');
@@ -224,9 +247,9 @@ class ImposterStorage {
         }
     }
 
-    async _getMeta(imposterId, stubId) {
+    async _getMeta(imposterId: ImposterId, stubId: string): Promise<StubMeta | null> {
         try {
-            const res = await this.dbClient.getObject(ENTITIES.meta, [ imposterId, stubId ].join(':'));
+            const res = await this.dbClient.getObject<ENTITY_IDS.meta>(ENTITY_IDS.meta, [ imposterId, stubId ].join(':'));
             return res;
         } catch (e) {
             this._logger.error(e, 'GET_META_ERROR');
@@ -234,47 +257,47 @@ class ImposterStorage {
         }
     }
 
-    async addMatch(stubId, match) {
+    async addMatch(stubId: string, match: StubMatch): Promise<number | null> {
         try {
-            return await this.dbClient.pushToObject(ENTITIES.matchList, stubId, match);
+            return await this.dbClient.pushToObject(ENTITY_IDS.matchList, stubId, match);
         } catch (e) {
             this._logger.error(e, 'ADD_MATCH_ERROR');
             return Promise.reject(e);
         }
     }
 
-    async getMatches(stubId) {
+    async getMatches(stubId: string): Promise<Array<StubMatch> | null> {
 
         try {
-            return await this.dbClient.getObject(ENTITIES.matchList, stubId);
+            return await this.dbClient.getObject<ENTITY_IDS.matchList>(ENTITY_IDS.matchList, stubId);
         } catch (e) {
             this._logger.error(e, 'GET_MATCHES_ERROR');
             return Promise.reject(e);
         }
     }
 
-    async deleteMatches(stubId) {
+    async deleteMatches(stubId: string) {
         try {
-            return await this.dbClient.delObject(ENTITIES.matchList, stubId);
+            return await this.dbClient.delObject(ENTITY_IDS.matchList, stubId);
         } catch (e) {
             this._logger.error(e, 'DELETE_MATCHES_ERROR');
             return Promise.reject(e);
         }
     }
 
-    async getRequestCounter(imposterId) {
+    async getRequestCounter(imposterId: ImposterId) {
         try {
-            return await this.dbClient.getObject(ENTITIES.requestCounter, imposterId);
+            return await this.dbClient.getObject(ENTITY_IDS.requestCounter, imposterId);
         } catch (e) {
             this._logger.error(e, 'GET_REQUEST_COUNTER_ERROR');
             return Promise.reject(e);
         }
     }
 
-    async incrementRequestCounter(imposterId) {
+    async incrementRequestCounter(imposterId: ImposterId) {
         try {
-            await this.dbClient.incrementCounter(ENTITIES.requestCounter, imposterId);
-            const val = await this.dbClient.getObject(ENTITIES.requestCounter, imposterId);
+            await this.dbClient.incrementCounter(ENTITY_IDS.requestCounter, imposterId);
+            const val = await this.dbClient.getObject(ENTITY_IDS.requestCounter, imposterId);
             return val;
         } catch (e) {
             this._logger.error(e, 'INCREMENT_REQUEST_COUNTER_ERROR');
@@ -282,14 +305,16 @@ class ImposterStorage {
         }
     }
 
-    async addStub(imposterId, stub, index) {
+    async addStub(imposterId: ImposterId, stub: Stub, index?: number) {
         const imposter = await this.getImposter(imposterId);
         if (!imposter) {
             return;
         }
 
         const stubDefinition = await this.saveStubMetaAndResponses(imposterId, stub);
-
+        if (!stubDefinition) {
+            return;
+        }
         if (!Array.isArray(imposter.stubs)) {
             imposter.stubs = [];
         }
@@ -302,7 +327,7 @@ class ImposterStorage {
         await this.saveImposter(imposter);
     }
 
-    async deleteStubAtIndex(imposterId, index) {
+    async deleteStubAtIndex(imposterId: ImposterId, index: number) {
         const imposter = await this.getImposter(imposterId);
         if (!imposter) {
             return;
@@ -322,7 +347,7 @@ class ImposterStorage {
         await this.saveImposter(imposter);
     }
 
-    async _deleteStub(imposterId, stubId) {
+    async _deleteStub(imposterId: ImposterId, stubId: string) {
         if (!stubId) {
             return;
         }
@@ -337,7 +362,7 @@ class ImposterStorage {
         await this.deleteMatches(stubId);
     }
 
-    async overwriteAllStubs(imposterId, stubs = []) {
+    async overwriteAllStubs(imposterId: ImposterId, stubs: Array<Stub> = []) {
         const imposter = await this.getImposter(imposterId);
         if (!imposter) {
             return;
@@ -350,14 +375,17 @@ class ImposterStorage {
 
         const stubDefinitions = [];
         for (let i = 0; i < stubs.length; i += 1) {
-            stubDefinitions.push(await this.saveStubMetaAndResponses(imposterId, stubs[i]));
+            const stubDefinition = await this.saveStubMetaAndResponses(imposterId, stubs[i]);
+            if (stubDefinition) {
+                stubDefinitions.push(stubDefinition);
+            }
         }
 
         imposter.stubs = stubDefinitions;
         await this.saveImposter(imposter);
     }
 
-    async addResponse(imposterId, stubId, response) {
+    async addResponse(imposterId: ImposterId, stubId: string, response: MbResponse) {
 
         const meta = await this._getMeta(imposterId, stubId);
         if (!meta) {
@@ -374,7 +402,7 @@ class ImposterStorage {
         return meta;
     }
 
-    async getNextResponse(imposterId, stubId) {
+    async getNextResponse(imposterId: ImposterId, stubId: string): Promise<MbResponse | null> {
         const meta = await this._getMeta(imposterId, stubId);
 
         if (!meta) {
@@ -393,15 +421,15 @@ class ImposterStorage {
         return responseConfig;
     }
 
-    async saveStubMetaAndResponses(imposterId, stub) {
+    async saveStubMetaAndResponses(imposterId: ImposterId, stub: Stub): Promise<StubDefinition | undefined> {
         if (!stub) {
             return;
         }
         const stubId = this._generateId('stub');
-        const stubDefinition = {
+        const stubDefinition: StubDefinition = {
             meta: { id: stubId },
         };
-        const meta = {
+        const meta: StubMeta = {
             responseIds: [],
             orderWithRepeats: [],
             nextIndex: 0,
@@ -426,6 +454,4 @@ class ImposterStorage {
     }
 }
 
-ImposterStorage.CHANNELS = CHANNELS;
-
-module.exports = ImposterStorage;
+export default ImposterStorage;

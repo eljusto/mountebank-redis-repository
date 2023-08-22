@@ -1,20 +1,32 @@
-'use strict';
+import { readFileSync } from 'fs';
+import type { RedisOptions } from 'ioredis';
 
-const fs = require('fs');
+import ImposterStorage, { CHANNEL_IDS } from './ImposterStorage';
+import stubsRepository from './stubRepository';
 
-const ImposterStorage = require('./ImposterStorage');
-const stubsRepository = require('./stubRepository');
+import type { Imposter, ImposterConfig, ImposterFunctions, ImposterId, IncomingImposter, Logger, OutgoingImposter, StubDefinition } from './types';
 
 const DEFAULT_REPO_CONFIG = {
     redisOptions: {
-        socket: {
-            host: 'localhost',
-            port: 6379,
-        },
+        host: 'localhost',
+        port: 6379,
     },
 };
 
-function getRedisRepoConfig(config) {
+interface RedisMbConfig {
+    redisOptions: RedisOptions;
+}
+
+interface MbConfig {
+    debug?: boolean;
+    impostersRepositoryConfig?: RedisMbConfig | string;
+}
+
+interface MbProtocol {
+    createImposterFrom: (imposterConfig: ImposterConfig) => Promise<IncomingImposter>;
+}
+
+function getRedisRepoConfig(config: MbConfig): RedisMbConfig {
     if (!config.impostersRepositoryConfig) {
         return DEFAULT_REPO_CONFIG;
     }
@@ -23,17 +35,17 @@ function getRedisRepoConfig(config) {
         return config.impostersRepositoryConfig;
     }
     try {
-        return JSON.parse(fs.readFileSync(config.impostersRepositoryConfig));
+        return JSON.parse(readFileSync(config.impostersRepositoryConfig) as unknown as string);
     } catch (e) {
-        throw new Error(`Can't read impostersRepositoryConfig from ${ config.impostersRepositoryConfig }.`, e);
+        throw new Error(`Can't read impostersRepositoryConfig from ${ config.impostersRepositoryConfig }: ${ e }`);
     }
 }
 
-function create(config, logger) {
-    let appProtocols;
+function create(config: MbConfig, logger: Logger) {
+    let appProtocols: Record<string, MbProtocol>;
 
-    const imposterFns = {};
-    let repoConfig;
+    const imposterFns: Record<string, Partial<ImposterFunctions>> = {};
+    let repoConfig: RedisMbConfig;
     try {
         repoConfig = getRedisRepoConfig(config);
     } catch (e) {
@@ -51,21 +63,26 @@ function create(config, logger) {
      * @memberOf module:models/redisBackedImpostersRepository#
      * @param {Object} imposter - the imposter
      */
-    function addReference(imposter) {
+    function addReference(imposter: IncomingImposter) {
         const id = String(imposter.port);
-        imposterFns[id] = {};
-        Object.keys(imposter).forEach(key => {
-            if (typeof imposter[key] === 'function') {
-                imposterFns[id][key] = imposter[key];
-            }
-        });
+        imposterFns[id] = Object.fromEntries(
+            Object.keys(imposter)
+                .filter(key => {
+                    return (typeof imposter[key as keyof Imposter] === 'function');
+                })
+                .map(key => {
+                    return [ key as keyof ImposterFunctions, imposter[key as keyof ImposterFunctions] ];
+                }));
     }
 
-    function rehydrate(imposter) {
-        const id = String(imposter.port);
-        Object.keys(imposterFns[id]).forEach(key => {
-            imposter[key] = imposterFns[id][key];
+    function rehydrate(imposterConfig: ImposterConfig) {
+        const newImposterFns: Partial<ImposterFunctions> = {};
+        const id = String(imposterConfig.port);
+        Object.keys(imposterFns[id]).forEach((key) => {
+            newImposterFns[key as keyof ImposterFunctions] = imposterFns[id][key as keyof ImposterFunctions];
         });
+
+        return { ...newImposterFns as ImposterFunctions, ...imposterConfig };
     }
 
     /**
@@ -74,17 +91,17 @@ function create(config, logger) {
      * @param {Object} imposter - the imposter to add
      * @returns {Object} - the promise
      */
-    async function add(imposter) {
+    async function add(imposter: IncomingImposter): Promise<Imposter | null> {
         try {
-            const imposterConfig = imposter.creationRequest;
-            const stubs = imposterConfig.stubs || [];
+            const stubs = imposter.creationRequest.stubs || [];
 
             const saveStubs = stubs.map(stub => imposterStorage.saveStubMetaAndResponses(imposter.port, stub));
             const stubDefinitions = await Promise.all(saveStubs);
 
-            delete imposterConfig.requests;
-            imposterConfig.port = imposter.port;
-            imposterConfig.stubs = stubDefinitions;
+            const { requests, ...imposterConfig } = {
+                ...imposter.creationRequest,
+                stubs: stubDefinitions.filter(Boolean) as unknown as Array<StubDefinition>,
+            };
 
             await imposterStorage.saveImposter(imposterConfig);
 
@@ -103,17 +120,17 @@ function create(config, logger) {
      * @param {Number} id - the id of the imposter (e.g. the port)
      * @returns {Object} - the promise resolving to the imposter
      */
-    async function get(id) {
+    async function get(id: ImposterId): Promise<OutgoingImposter | null> {
         try {
             const imposter = await imposterStorage.getImposter(id);
             if (!imposter) {
                 return null;
             }
-            imposter.stubs = await stubsFor(id).toJSON();
+            return {
+                ...rehydrate(imposter),
+                stubs: await stubsFor(id).toJSON(),
+            } as OutgoingImposter;
 
-            rehydrate(imposter);
-
-            return imposter;
         } catch (e) {
             logger.error(e, 'GET_STUB_ERROR');
             return Promise.reject(e);
@@ -125,12 +142,12 @@ function create(config, logger) {
      * @memberOf module:models/redisBackedImpostersRepository#
      * @returns {Object} - all imposters keyed by port
      */
-    async function all() {
+    async function all(): Promise<Array<OutgoingImposter | null> | undefined> {
         if (imposterStorage.dbClient.isClosed()) {
             return [];
         }
         try {
-            return Promise.all(Object.keys(imposterFns).map(get));
+            return Promise.all(Object.keys(imposterFns).map((key) => get(Number(key))));
         } catch (e) {
             logger.error(e, 'GET_ALL_ERROR');
         }
@@ -142,11 +159,11 @@ function create(config, logger) {
      * @param {Number} id - the id (e.g. the port)
      * @returns {boolean}
      */
-    async function exists(id) {
+    async function exists(id: ImposterId): Promise<boolean> {
         return Object.keys(imposterFns).indexOf(String(id)) >= 0;
     }
 
-    async function shutdown(id) {
+    async function shutdown(id: ImposterId | string): Promise<void> {
         if (typeof imposterFns[String(id)] === 'undefined') {
             return;
         }
@@ -168,10 +185,10 @@ function create(config, logger) {
      * @param {Number} id - the id (e.g. the port)
      * @returns {Object} - the deletion promise
      */
-    async function del(id) {
+    async function del(id: ImposterId): Promise<OutgoingImposter | null> {
         try {
             const imposter = await get(id);
-            const cleanup = [ shutdown(id) ];
+            const cleanup: Array<Promise<unknown>> = [ shutdown(id) ];
 
             if (imposter !== null) {
                 cleanup.push(imposterStorage.deleteImposter(id));
@@ -195,9 +212,9 @@ function create(config, logger) {
             const shutdownFns = Object.keys(imposterFns).map(shutdown);
             await Promise.all(shutdownFns);
             await Promise.all([
-                await imposterStorage.unsubscribe(ImposterStorage.CHANNELS.imposter_change),
-                await imposterStorage.unsubscribe(ImposterStorage.CHANNELS.imposter_delete),
-                await imposterStorage.unsubscribe(ImposterStorage.CHANNELS.all_imposters_delete),
+                await imposterStorage.unsubscribe(CHANNEL_IDS.imposter_change),
+                await imposterStorage.unsubscribe(CHANNEL_IDS.imposter_delete),
+                await imposterStorage.unsubscribe(CHANNEL_IDS.all_imposters_delete),
             ]);
             await imposterStorage.stop();
         } catch (e) {
@@ -219,7 +236,7 @@ function create(config, logger) {
      * @memberOf module:models/redisBackedImpostersRepository#
      * @returns {Object} - the deletion promise
      */
-    async function deleteAll() {
+    async function deleteAll(): Promise<void> {
         const ids = Object.keys(imposterFns);
         try {
             await Promise.all(ids.map(shutdown));
@@ -229,7 +246,7 @@ function create(config, logger) {
         }
     }
 
-    async function loadImposter(imposterConfig, protocols) {
+    async function loadImposter(imposterConfig: ImposterConfig, protocols: Record<string, MbProtocol>): Promise<Imposter | undefined> {
         const protocol = protocols[imposterConfig.protocol];
 
         if (protocol) {
@@ -244,16 +261,19 @@ function create(config, logger) {
                 logger.error(e, `Cannot load imposter ${ imposterConfig.port }`);
             }
         } else {
-            logger.error(`Cannot load imposter ${ imposterConfig.port }; no protocol loaded for ${ config.protocol }`);
+            logger.error(`Cannot load imposter ${ imposterConfig.port }; no protocol loaded for ${ imposterConfig.protocol }`);
         }
     }
 
-    function onImposterChange(imposterId) {
+    function onImposterChange(imposterId: ImposterId) {
         const imposter = imposterFns[imposterId];
 
         if (imposter) {
             shutdown(imposterId).then(() => {
                 imposterStorage.getImposter(imposterId).then(imposterConfig => {
+                    if (!imposterConfig) {
+                        return;
+                    }
                     loadImposter(imposterConfig, appProtocols).then(() => {
                         if (config.debug) {
                             logger.info(`Imposter ${ imposterId } reloaded`);
@@ -263,6 +283,9 @@ function create(config, logger) {
             });
         } else {
             imposterStorage.getImposter(imposterId).then(imposterConfig => {
+                if (!imposterConfig) {
+                    return;
+                }
                 loadImposter(imposterConfig, appProtocols).then(() => {
                     if (config.debug) {
                         logger.info(`Imposter ${ imposterId } reloaded`);
@@ -273,7 +296,7 @@ function create(config, logger) {
         }
     }
 
-    function onImposterDelete(imposterId) {
+    function onImposterDelete(imposterId: ImposterId) {
         const imposter = imposterFns[imposterId];
 
         if (imposter) {
@@ -300,7 +323,7 @@ function create(config, logger) {
      * @param {Object} protocols - The protocol map, used to instantiate a new instance
      * @returns {Object} - a promise
      */
-    async function loadAll(protocols) {
+    async function loadAll(protocols: Record<string, MbProtocol>): Promise<void> {
         appProtocols = protocols;
 
         try {
@@ -311,16 +334,16 @@ function create(config, logger) {
             const promises = allImposters.map(imposter => loadImposter(imposter, protocols));
             await Promise.all(promises);
             await Promise.all([
-                await imposterStorage.subscribe(ImposterStorage.CHANNELS.imposter_change, onImposterChange),
-                await imposterStorage.subscribe(ImposterStorage.CHANNELS.imposter_delete, onImposterDelete),
-                await imposterStorage.subscribe(ImposterStorage.CHANNELS.all_imposters_delete, onAllImpostersDelete),
+                await imposterStorage.subscribe<CHANNEL_IDS.imposter_change>(CHANNEL_IDS.imposter_change, onImposterChange),
+                await imposterStorage.subscribe<CHANNEL_IDS.imposter_delete>(CHANNEL_IDS.imposter_delete, onImposterDelete),
+                await imposterStorage.subscribe<CHANNEL_IDS.all_imposters_delete>(CHANNEL_IDS.all_imposters_delete, onAllImpostersDelete),
             ]);
         } catch (e) {
             logger.error(e, 'LOAD_ALL_ERROR');
         }
     }
 
-    function stubsFor(id) {
+    function stubsFor(id: ImposterId) {
         return stubsRepository(id, imposterStorage, logger);
     }
 
@@ -338,4 +361,4 @@ function create(config, logger) {
     };
 }
 
-module.exports = { create };
+export default { create };

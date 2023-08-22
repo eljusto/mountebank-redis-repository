@@ -10,7 +10,7 @@ const { GenericContainer } = require('testcontainers');
 
 const { loadProtocols } = require('mountebank/src/models/protocols');
 
-const create = require('./index').create;
+const create = require('./index').default.create;
 
 const mock = require('./testUtils/mock').mock;
 const deimposterize = require('./testUtils/deimposterize');
