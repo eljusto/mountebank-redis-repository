@@ -11,7 +11,7 @@ const REDIS_PORT = 6379;
 const mock = require('./testUtils/mock').mock;
 const imposterize = require('./testUtils/imposterize');
 const createLogger = require('./testUtils/createLogger');
-const create = require('./index').create;
+const create = require('./index').default.create;
 
 let logger;
 let container;

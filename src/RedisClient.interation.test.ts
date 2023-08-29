@@ -1,16 +1,16 @@
-const { GenericContainer } = require('testcontainers');
+import { GenericContainer } from 'testcontainers';
 
-const RedisClient = require('./RedisClient').default;
+import RedisClient from './RedisClient';
 
-const createLogger = require('./testUtils/createLogger');
+import createLogger from './testUtils/createLogger';
+
+import { beforeAll, afterAll, expect, it } from '@jest/globals';
 
 let client;
 let logger;
 let container;
 
 const REDIS_PORT = 6379;
-
-jest.setTimeout(15000);
 beforeAll(async() => {
     logger = createLogger();
 
@@ -152,11 +152,11 @@ it('del all objects', async() => {
 
 it('subscribe, get message and unsubscribe', () => {
     return new Promise((resolve, reject) => {
-        const handleMessagePublished = (message) => {
+        const handleMessagePublished = (message: string) => {
             try {
                 expect(message).toBe('message in the bottle');
 
-                client.unsubscribe('channel_1').then(() => resolve());
+                client.unsubscribe('channel_1').then(() => resolve(1));
             } catch (error) {
                 client.unsubscribe('channel_1').then(() => reject(error));
             }
@@ -178,7 +178,7 @@ it('subscribe, unsubscribe and check that no message received then', () => {
         client.subscribe('channel_2', handleMessagePublished).then(() => {
             client._publish('channel_2', 'message in the bottle', 'ANOTHER_CLIENT_ID').then(() => {
                 // 2 seconds would be enough to wait for callback
-                setTimeout(() => resolve(), 2000);
+                setTimeout(() => resolve(1), 2000);
             });
         });
 
