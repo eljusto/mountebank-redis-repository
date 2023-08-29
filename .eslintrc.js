@@ -227,14 +227,13 @@ module.exports = {
             node: {
                 extensions: [
                     '.js',
-                    '.tsx',
                 ],
             },
         },
     },
     overrides: [
         {
-            files: [ '*.ts', '*.tsx' ],
+            files: [ '*.ts' ],
             rules: {
                 '@typescript-eslint/no-require-imports': 'error',
                 '@typescript-eslint/no-use-before-define': [ 'error', {
@@ -242,14 +241,6 @@ module.exports = {
                 } ],
                 'prefer-rest-params': 'error',
                 'prefer-spread': 'error',
-            },
-        },
-        {
-            files: [
-                '*.d.ts',
-            ],
-            rules: {
-                'react/no-unused-prop-types': 'off',
             },
         },
     ],
